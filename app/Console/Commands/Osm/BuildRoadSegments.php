@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Osm;
 
 use App\Actions\RoadSegments\InterpretOsmHighway;
+use App\Models\SegmentReport;
 use Illuminate\Console\Command;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -32,17 +33,6 @@ class BuildRoadSegments extends Command
      *
      * @var list<string>
      */
-    /**
-     * How much each point of report severity adds to a road's score.
-     */
-    private const SEVERITY_WEIGHT = 5;
-
-    /**
-     * The most that reports can add, so local knowledge colours the score
-     * without completely overriding what the road actually is.
-     */
-    private const MAX_REPORT_BOOST = 30;
-
     private const TAG_COLUMNS = [
         'osm_way_id', 'highway', 'ref', 'maxspeed', 'lanes', 'shoulder',
         'cycleway', 'cycleway_left', 'cycleway_right', 'cycleway_both',
@@ -142,13 +132,13 @@ class BuildRoadSegments extends Command
         $written = DB::affectingStatement(<<<'SQL'
             insert into road_segments (
                 osm_way_id, name, ref, geom, highway_type, surface, speed_limit_kmh,
-                lanes, has_shoulder, bike_infra, danger_score, source,
+                lanes, has_shoulder, bike_infra, danger_score, base_danger_score, source,
                 created_at, updated_at
             )
             select
                 h.osm_way_id, h.name, h.ref, h.geom, h.highway, h.surface, s.speed_limit_kmh,
                 s.lanes, s.has_shoulder, s.bike_infra,
-                least(100, s.danger_score + coalesce(r.boost, 0)), 'osm',
+                least(100, s.danger_score + coalesce(r.boost, 0)), s.danger_score, 'osm',
                 now(), now()
             from osm_segment_scores s
             join osm_highways h using (osm_way_id)
@@ -172,8 +162,9 @@ class BuildRoadSegments extends Command
                 has_shoulder = excluded.has_shoulder,
                 bike_infra = excluded.bike_infra,
                 danger_score = excluded.danger_score,
+                base_danger_score = excluded.base_danger_score,
                 updated_at = now()
-        SQL, [self::MAX_REPORT_BOOST, self::SEVERITY_WEIGHT]);
+        SQL, [SegmentReport::MAX_BOOST, SegmentReport::SEVERITY_WEIGHT]);
 
         DB::statement('drop table if exists osm_segment_scores');
 

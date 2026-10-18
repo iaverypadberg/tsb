@@ -23,6 +23,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $email_verified_at
  * @property string $password
  * @property string $risk_tolerance
+ * @property bool $is_admin
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
@@ -47,6 +48,7 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_admin' => 'boolean',
         ];
     }
 
@@ -60,6 +62,14 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     }
 
     /**
+     * Whether this user may read and act on what riders report.
+     */
+    public function isAdmin(): bool
+    {
+        return (bool) $this->is_admin;
+    }
+
+    /**
      * The routes this rider has uploaded.
      *
      * @return HasMany<Route, $this>
@@ -67,6 +77,16 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     public function routes(): HasMany
     {
         return $this->hasMany(Route::class);
+    }
+
+    /**
+     * The roads this rider has reported as dangerous.
+     *
+     * @return HasMany<RoadFlag, $this>
+     */
+    public function roadFlags(): HasMany
+    {
+        return $this->hasMany(RoadFlag::class);
     }
 
     /**

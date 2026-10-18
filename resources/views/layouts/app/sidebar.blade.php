@@ -19,6 +19,16 @@
                     <flux:sidebar.item icon="map" :href="route('routes.index')" :current="request()->routeIs('routes.*')" wire:navigate>
                         {{ __('Routes') }}
                     </flux:sidebar.item>
+
+                    <flux:sidebar.item icon="flag" :href="route('flags.index')" :current="request()->routeIs('flags.*')" wire:navigate>
+                        {{ __('Flag a road') }}
+                    </flux:sidebar.item>
+
+                    @can('review', \App\Models\RoadFlag::class)
+                        <flux:sidebar.item icon="inbox" :href="route('admin.road-flags')" :current="request()->routeIs('admin.*')" wire:navigate>
+                            {{ __('Review flags') }}
+                        </flux:sidebar.item>
+                    @endcan
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 

@@ -1,26 +1,6 @@
 import L from 'leaflet';
-
-/**
- * Danger is a magnitude, so it gets a sequential ramp: one hue, darkening as
- * the road gets worse. Blue is the safe end — the parts of the route nothing
- * was flagged on — and the reds run light to dark from there.
- *
- * Three steps rather than more: adjacent steps any closer than this are not
- * tellable apart, by colour-blind readers or anyone else. Every section also
- * carries its score as a number on its card, so the colour is never the only
- * thing saying how bad a road is.
- */
-const SAFE_COLOR = '#2563eb';
-
-const DANGER_SCALE = [
-    { upTo: 69, color: '#EFC744', label: 'Moderate' },
-    { upTo: 89, color: '#FB7F4A', label: 'Bad' },
-    { upTo: 100, color: '#b91c1c', label: 'Severe' },
-];
-
-function dangerColor(score) {
-    return (DANGER_SCALE.find((step) => score <= step.upTo) ?? DANGER_SCALE[DANGER_SCALE.length - 1]).color;
-}
+import { DANGER_SCALE, dangerColor, SAFE_COLOR, tileLayer } from './danger.js';
+import './flag-map.js';
 
 /**
  * Leaflet map showing a route and the stretches flagged as dangerous.
@@ -39,11 +19,7 @@ document.addEventListener('alpine:init', () => {
                 attributionControl: true,
             });
 
-            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution:
-                    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            }).addTo(this.map);
+            tileLayer(L).addTo(this.map);
 
             if (coordinates.length === 0) {
                 this.map.setView([44.26, -72.58], 8);
@@ -79,19 +55,27 @@ document.addEventListener('alpine:init', () => {
          * Flagged stretches sit on top of the route at a constant width, the
          * colour alone carrying how bad the road is. A white casing underneath
          * keeps them legible where they cross dark features on the basemap.
+         *
+         * Every casing goes down before any of the coloured lines: a run is
+         * split wherever the road's name changes, so two flagged stretches
+         * often meet, and a casing drawn after its neighbour's line would
+         * nick a white gap into the join.
          */
         drawFlagged() {
-            flagged.forEach((section) => {
-                if (!section.coordinates || section.coordinates.length < 2) {
-                    return;
-                }
+            const drawable = flagged.filter(
+                (section) => section.coordinates && section.coordinates.length >= 2,
+            );
 
+            drawable.forEach((section) => {
                 L.polyline(section.coordinates, {
                     color: '#ffffff',
                     weight: 9,
                     opacity: 0.9,
+                    interactive: false,
                 }).addTo(this.map);
+            });
 
+            drawable.forEach((section) => {
                 const layer = L.polyline(section.coordinates, {
                     color: dangerColor(section.danger),
                     weight: 5,
@@ -102,7 +86,6 @@ document.addEventListener('alpine:init', () => {
 
                 this.flaggedLayers[section.id] = layer;
             });
-
         },
 
         /**

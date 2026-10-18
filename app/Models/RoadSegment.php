@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\HasMappableGeometry;
 use Clickbar\Magellan\Data\Geometries\LineString;
 use Database\Factories\RoadSegmentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -16,13 +17,16 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int|null $osm_way_id
  * @property string|null $name
+ * @property string|null $ref
  * @property LineString $geom
  * @property string|null $highway_type
+ * @property string|null $surface
  * @property int|null $speed_limit_kmh
  * @property int|null $lanes
  * @property bool|null $has_shoulder
  * @property string $bike_infra
  * @property int $danger_score
+ * @property int $base_danger_score
  * @property string $source
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -30,19 +34,22 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'osm_way_id',
     'name',
+    'ref',
     'geom',
     'highway_type',
+    'surface',
     'speed_limit_kmh',
     'lanes',
     'has_shoulder',
     'bike_infra',
     'danger_score',
+    'base_danger_score',
     'source',
 ])]
 class RoadSegment extends Model
 {
     /** @use HasFactory<RoadSegmentFactory> */
-    use HasFactory;
+    use HasFactory, HasMappableGeometry;
 
     /**
      * No cycling provision at all.
@@ -101,6 +108,7 @@ class RoadSegment extends Model
             'lanes' => 'integer',
             'has_shoulder' => 'boolean',
             'danger_score' => 'integer',
+            'base_danger_score' => 'integer',
         ];
     }
 
@@ -112,5 +120,24 @@ class RoadSegment extends Model
     public function reports(): HasMany
     {
         return $this->hasMany(SegmentReport::class);
+    }
+
+    /**
+     * Rider flags covering this road, at any stage of review.
+     *
+     * @return HasMany<RoadFlagSegment, $this>
+     */
+    public function flagSegments(): HasMany
+    {
+        return $this->hasMany(RoadFlagSegment::class);
+    }
+
+    /**
+     * What a rider would call this road: its route number if it has one,
+     * otherwise its name, otherwise what kind of road it is.
+     */
+    public function roadKey(): string
+    {
+        return $this->ref ?? $this->name ?? $this->highway_type ?? 'road';
     }
 }

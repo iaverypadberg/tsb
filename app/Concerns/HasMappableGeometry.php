@@ -44,6 +44,19 @@ trait HasMappableGeometry
             [self::MAX_MAP_POINTS, self::MAP_SIMPLIFY_TOLERANCE_DEGREES, $this->getKey()],
         );
 
+        return self::leafletCoordinates(is_string($geojson) ? $geojson : null);
+    }
+
+    /**
+     * A GeoJSON LineString as Leaflet wants it.
+     *
+     * GeoJSON orders coordinates longitude first and Leaflet latitude
+     * first, which is the one conversion every map query here has to make.
+     *
+     * @return list<array{float, float}>
+     */
+    public static function leafletCoordinates(?string $geojson): array
+    {
         if (! is_string($geojson)) {
             return [];
         }
@@ -51,7 +64,6 @@ trait HasMappableGeometry
         /** @var array{coordinates?: list<array{float, float}>} $decoded */
         $decoded = json_decode($geojson, true) ?: [];
 
-        // GeoJSON orders coordinates longitude first; Leaflet wants latitude first.
         return array_map(
             fn (array $pair): array => [$pair[1], $pair[0]],
             $decoded['coordinates'] ?? [],

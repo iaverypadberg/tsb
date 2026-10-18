@@ -29,6 +29,7 @@ class RoadSegmentFactory extends Factory
             'has_shoulder' => null,
             'bike_infra' => RoadSegment::INFRA_NONE,
             'danger_score' => 18,
+            'base_danger_score' => 18,
             'source' => 'osm',
             ...$this->geometryBetween(44.26, -72.58, 44.27, -72.57),
         ];
@@ -44,6 +45,7 @@ class RoadSegmentFactory extends Factory
             'speed_limit_kmh' => 89,
             'lanes' => 4,
             'danger_score' => 92,
+            'base_danger_score' => 92,
         ]);
     }
 
@@ -58,6 +60,7 @@ class RoadSegmentFactory extends Factory
             'lanes' => null,
             'bike_infra' => RoadSegment::INFRA_PATH,
             'danger_score' => 0,
+            'base_danger_score' => 0,
         ]);
     }
 

@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $road_segment_id
  * @property int|null $user_id
+ * @property int|null $road_flag_id
  * @property string $reason
  * @property int $severity
  * @property string $source
@@ -29,6 +30,7 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'road_segment_id',
     'user_id',
+    'road_flag_id',
     'reason',
     'severity',
     'source',
@@ -62,6 +64,17 @@ class SegmentReport extends Model
     public const MAX_SEVERITY = 5;
 
     /**
+     * How much each point of severity adds to a road's danger score.
+     */
+    public const SEVERITY_WEIGHT = 5;
+
+    /**
+     * The most that reports can add, so local knowledge colours the score
+     * without completely overriding what the road actually is.
+     */
+    public const MAX_BOOST = 30;
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -91,5 +104,15 @@ class SegmentReport extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * The accepted flag that wrote this report, for the ones riders raised.
+     *
+     * @return BelongsTo<RoadFlag, $this>
+     */
+    public function roadFlag(): BelongsTo
+    {
+        return $this->belongsTo(RoadFlag::class);
     }
 }
