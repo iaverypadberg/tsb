@@ -1,0 +1,54 @@
+services:
+    postgres:
+        image: 'pgrouting/pgrouting:17-3.5-3.7'
+        container_name: badroads-postgres
+        environment:
+            POSTGRES_DB: '${DB_DATABASE:-bad_roads}'
+            POSTGRES_USER: '${DB_USERNAME:-bad_roads}'
+            POSTGRES_PASSWORD: '${DB_PASSWORD:-secret}'
+        ports:
+            - '${DB_PORT:-5432}:5432'
+        volumes:
+            - 'badroads-pgdata:/var/lib/postgresql/data'
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U ${DB_USERNAME:-bad_roads} -d ${DB_DATABASE:-bad_roads}']
+            interval: 5s
+            timeout: 5s
+            retries: 10
+        restart: unless-stopped
+
+    redis:
+        image: 'redis:7-alpine'
+        container_name: badroads-redis
+        ports:
+            - '${REDIS_PORT:-6379}:6379'
+        volumes:
+            - 'badroads-redisdata:/data'
+        healthcheck:
+            test: ['CMD', 'redis-cli', 'ping']
+            interval: 5s
+            timeout: 5s
+            retries: 10
+        restart: unless-stopped
+
+    # Run on demand, not part of the normal stack:
+    #   docker compose run --rm osm2pgsql osm2pgsql --help
+    # `php artisan osm:import` drives this for you.
+    osm2pgsql:
+        image: 'iboates/osm2pgsql:latest'
+        profiles: ['tools']
+        depends_on:
+            postgres:
+                condition: service_healthy
+        environment:
+            PGPASSWORD: '${DB_PASSWORD:-secret}'
+        volumes:
+            - './database/osm:/osm:ro'
+            - './storage/app/osm:/pbf'
+        entrypoint: ['']
+
+volumes:
+    badroads-pgdata:
+        driver: local
+    badroads-redisdata:
+        driver: local
