@@ -166,6 +166,15 @@ new class extends Component {
     }
 
     /**
+     * Whether there are results worth showing beside the map.
+     */
+    #[Computed(persist: false)]
+    public function isComplete(): bool
+    {
+        return $this->analysis?->status === RouteAnalysis::STATUS_COMPLETED;
+    }
+
+    /**
      * @return list<array{float, float}>
      */
     #[Computed(persist: false)]
@@ -206,7 +215,7 @@ new class extends Component {
     }
 }; ?>
 
-<div class="flex h-full w-full flex-1 flex-col gap-6" @if ($this->isWorking) wire:poll.2s @endif>
+<div class="flex h-full w-full flex-1 flex-col gap-6 pb-24 sm:pb-40" @if ($this->isWorking) wire:poll.2s @endif>
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
             <flux:heading size="xl">{{ $route->name }}</flux:heading>
@@ -283,31 +292,32 @@ new class extends Component {
         </flux:callout>
     @endif
 
-    <div
-        wire:ignore.self
-        x-data="routeMap(@js($this->coordinates), @js($this->flaggedForMap))"
-        wire:key="map-{{ $this->analysis?->id }}-{{ $this->flaggedSections->count() }}"
-        class="h-[20rem] w-full overflow-hidden rounded-xl border border-neutral-200 sm:h-[32rem] dark:border-neutral-700"
-        data-test="route-map"
-    ></div>
+    <div class="grid gap-4 @if ($this->isComplete) lg:grid-cols-3 @endif" data-test="map-layout">
+        <div
+            wire:ignore.self
+            x-data="routeMap(@js($this->coordinates), @js($this->flaggedForMap))"
+            wire:key="map-{{ $this->analysis?->id }}-{{ $this->flaggedSections->count() }}"
+            class="h-[24rem] w-full overflow-hidden rounded-xl border border-neutral-200 sm:h-[38rem] lg:col-span-2 dark:border-neutral-700"
+            data-test="route-map"
+        ></div>
 
-    @if ($this->analysis?->status === \App\Models\RouteAnalysis::STATUS_COMPLETED)
-        <div>
-            <flux:heading size="lg" class="mb-3">
-                {{ trans_choice('{0}Nothing flagged|{1}:count flagged section|[2,*]:count flagged sections', $this->flaggedSections->count(), ['count' => $this->flaggedSections->count()]) }}
-            </flux:heading>
+        @if ($this->isComplete)
+            <div class="flex min-h-0 flex-col gap-3 lg:h-[38rem]">
+                <flux:heading size="lg">
+                    {{ trans_choice('{0}Nothing flagged|{1}:count flagged section|[2,*]:count flagged sections', $this->flaggedSections->count(), ['count' => $this->flaggedSections->count()]) }}
+                </flux:heading>
 
-            @if ($this->flaggedSections->isEmpty())
-                <flux:callout variant="success" icon="check-circle" :heading="__('This route looks fine')">
-                    {{ __('No stretch of this route passed your risk threshold.') }}
-                </flux:callout>
-            @else
-                <div class="grid gap-3">
-                    @foreach ($this->flaggedSections as $section)
-                        <livewire:pages::routes.flagged-section :section="$section" :wire:key="'section-'.$section->id" />
-                    @endforeach
-                </div>
-            @endif
-        </div>
-    @endif
-</div>
+                @if ($this->flaggedSections->isEmpty())
+                    <flux:callout variant="success" icon="check-circle" :heading="__('This route looks fine')">
+                        {{ __('No stretch of this route passed your risk threshold.') }}
+                    </flux:callout>
+                @else
+                    <div class="flex min-h-0 flex-col gap-2 overflow-y-auto pr-1" data-test="flagged-list">
+                        @foreach ($this->flaggedSections as $section)
+                            <livewire:pages::routes.flagged-section :section="$section" :wire:key="'section-'.$section->id" />
+                        @endforeach
+                    </div>
+                @endif
+            </div>
+        @endif
+    </div>

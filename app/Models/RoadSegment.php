@@ -8,6 +8,7 @@ use Database\Factories\RoadSegmentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -109,6 +110,9 @@ class RoadSegment extends Model
             'has_shoulder' => 'boolean',
             'danger_score' => 'integer',
             'base_danger_score' => 'integer',
+            'aadt' => 'integer',
+            'aadt_year' => 'integer',
+            'aadt_sample_share' => 'float',
         ];
     }
 
@@ -120,6 +124,18 @@ class RoadSegment extends Model
     public function reports(): HasMany
     {
         return $this->hasMany(SegmentReport::class);
+    }
+
+    /**
+     * The published traffic counts this road was matched to.
+     *
+     * More than one is normal: a way often spans two counted sections.
+     *
+     * @return BelongsToMany<AadtSection, $this>
+     */
+    public function aadtSections(): BelongsToMany
+    {
+        return $this->belongsToMany(AadtSection::class)->withPivot('samples');
     }
 
     /**
