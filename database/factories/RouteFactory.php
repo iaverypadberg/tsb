@@ -39,6 +39,9 @@ class RouteFactory extends Factory
             'source_id' => null,
             'original_gpx_path' => null,
             'elevation_gain_m' => fake()->numberBetween(0, 2_000),
+            // Matches the column default, so a factory route behaves like an
+            // uploaded one that has not been profiled yet.
+            'traffic_status' => Route::TRAFFIC_UNPROFILED,
             ...$this->attributesForCoordinates($coordinates),
         ];
     }

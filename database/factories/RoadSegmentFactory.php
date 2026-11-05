@@ -73,6 +73,20 @@ class RoadSegmentFactory extends Factory
     }
 
     /**
+     * A segment running due north for roughly a given number of metres.
+     *
+     * Crash density is a count over a length, so a test about it needs a
+     * road whose length it chose. A degree of latitude is close enough to
+     * constant for this to land within a metre or so of what was asked.
+     */
+    public function straight(float $metres): static
+    {
+        $delta = $metres / 111_320;
+
+        return $this->between(44.26, -72.58, 44.26 + $delta, -72.58);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function geometryBetween(float $fromLat, float $fromLon, float $toLat, float $toLon): array

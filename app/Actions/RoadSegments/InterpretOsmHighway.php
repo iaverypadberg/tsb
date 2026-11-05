@@ -163,6 +163,11 @@ class InterpretOsmHighway
     }
 
     /**
+     * Kilometres in one mile, which is exact by definition.
+     */
+    public const KM_PER_MILE = 1.609344;
+
+    /**
      * Speed limits in the United States are tagged in miles per hour, so the
      * unit matters: reading "65 mph" as 65 km/h would understate the road
      * badly.
@@ -178,9 +183,26 @@ class InterpretOsmHighway
         $value = (float) $matches[1];
         $unit = strtolower($matches[2] ?? '');
 
-        $kmh = $unit === 'mph' ? $value * 1.609344 : $value;
+        $kmh = $unit === 'mph' ? $value * self::KM_PER_MILE : $value;
 
         return (int) round($kmh);
+    }
+
+    /**
+     * The inverse, for showing a stored limit to a rider in the unit the
+     * sign by the road is written in.
+     *
+     * Rounding recovers the originally tagged figure exactly for every mph
+     * limit in the state: 89 km/h reads back as 55, 105 as 65. The handful
+     * of ways tagged with a bare number were taken as km/h on the way in and
+     * so convert honestly rather than exactly — 50 km/h reads as 31 mph,
+     * which is what that tag claims.
+     */
+    public function speedLimitMph(?int $speedLimitKmh): ?int
+    {
+        return $speedLimitKmh === null
+            ? null
+            : (int) round($speedLimitKmh / self::KM_PER_MILE);
     }
 
     private function lanes(?string $lanes): ?int

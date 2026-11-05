@@ -8,6 +8,10 @@ new class extends Component {
 
     /**
      * How alarming the section should look, by how bad the road is.
+     *
+     * Read off the score rather than off whether the section was flagged, so
+     * a stretch that came close to a brave rider's threshold still looks
+     * like what it is in the unflagged list.
      */
     public function severity(): string
     {
@@ -19,9 +23,15 @@ new class extends Component {
     }
 }; ?>
 
+{{-- A dashed border marks the stretches nothing was flagged on, so the two
+     lists stay tellable apart when they are scrolled together. --}}
 <div
-    class="flex items-center gap-3 rounded-lg border border-neutral-200 px-3 py-2 dark:border-neutral-700"
-    data-test="flagged-section"
+    @class([
+        'flex items-center gap-3 rounded-lg border px-3 py-2',
+        'border-neutral-200 dark:border-neutral-700' => $section->flagged,
+        'border-dashed border-neutral-200/80 dark:border-neutral-700/80' => ! $section->flagged,
+    ])
+    data-test="{{ $section->flagged ? 'flagged-section' : 'unflagged-section' }}"
 >
     <flux:badge :variant="$this->severity()" size="sm" class="shrink-0">
         {{ __(':score/100', ['score' => $section->max_danger]) }}
@@ -44,7 +54,7 @@ new class extends Component {
             icon="map-pin"
             square
             :aria-label="__('Show on map')"
-            x-on:click="$store.badroads.focused = {{ $section->id }}"
+            x-on:click="$store.badroads.show('focused', {{ $section->id }})"
             :data-test="'focus-section-'.$section->id"
         />
     </flux:tooltip>

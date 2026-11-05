@@ -15,7 +15,11 @@ use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
- * Matches a route against the road network and records the dangerous parts.
+ * Matches a route against the road network and records what it is made of.
+ *
+ * The dangerous stretches are what the rider is warned about, but they are
+ * recorded alongside the stretches in between, so the route can be read as a
+ * sequence of its parts rather than as a handful of warnings.
  *
  * Queued because matching a long route is a second or two of database work,
  * which is too long to make someone wait on a page load.
@@ -52,10 +56,16 @@ class AnalyseRoute implements ShouldQueue
             routeLengthMetres: (float) $route->distance_m,
         );
 
-        DB::transaction(function () use ($runs, $describe): void {
-            $this->analysis->flaggedSections()->delete();
+        $unflagged = $builder->unflaggedRuns(
+            samples: $samples,
+            flagged: $runs,
+            routeLengthMetres: (float) $route->distance_m,
+        );
 
-            foreach ($runs as $run) {
+        DB::transaction(function () use ($runs, $unflagged, $describe): void {
+            $this->analysis->sections()->delete();
+
+            foreach ([...$runs, ...$unflagged] as $run) {
                 $this->storeSection($run, $describe);
             }
         });
@@ -68,7 +78,7 @@ class AnalyseRoute implements ShouldQueue
     }
 
     /**
-     * Record one flagged section, cutting its geometry out of the route line.
+     * Record one section, cutting its geometry out of the route line.
      */
     private function storeSection(FlaggedRun $run, DescribeRoadSegments $describe): void
     {
@@ -83,9 +93,9 @@ class AnalyseRoute implements ShouldQueue
             <<<'SQL'
                 insert into flagged_sections (
                     route_analysis_id, start_fraction, end_fraction, geom,
-                    length_m, max_danger, reasons, created_at, updated_at
+                    length_m, max_danger, flagged, reasons, created_at, updated_at
                 )
-                select ?, ?, ?, ST_LineSubstring(r.geom, ?, ?), ?, ?, ?::json, now(), now()
+                select ?, ?, ?, ST_LineSubstring(r.geom, ?, ?), ?, ?, ?, ?::json, now(), now()
                 from routes r
                 where r.id = ?
                 returning id
@@ -98,6 +108,7 @@ class AnalyseRoute implements ShouldQueue
                 $run->endFraction,
                 $run->lengthMetres,
                 $run->maxDanger,
+                $run->flagged,
                 json_encode($describe->handle($segments)),
                 $this->analysis->route_id,
             ],
@@ -117,6 +128,9 @@ class AnalyseRoute implements ShouldQueue
     }
 
     /**
+     * What the analysis found, counted over the flagged runs only: the page
+     * reads this to say how much of the route the rider was warned about.
+     *
      * @param  list<FlaggedRun>  $runs
      * @param  list<RouteSample>  $samples
      * @return array<string, mixed>

@@ -75,6 +75,9 @@ class MatchRouteToRoadSegments
                     dangerScore: (int) ($values['danger_score'] ?? 0),
                     gapMetres: isset($values['gap_m']) ? (float) $values['gap_m'] : null,
                     roadKey: isset($values['road_key']) ? (string) $values['road_key'] : null,
+                    aadt: isset($values['aadt']) ? (int) $values['aadt'] : null,
+                    roadName: isset($values['road_name']) ? (string) $values['road_name'] : null,
+                    speedLimitKmh: isset($values['speed_limit_kmh']) ? (int) $values['speed_limit_kmh'] : null,
                 );
             },
             $rows,
@@ -107,16 +110,24 @@ class MatchRouteToRoadSegments
                 match.road_segment_id,
                 match.danger_score,
                 match.gap_m,
-                match.road_key
+                match.road_key,
+                match.road_name,
+                match.aadt,
+                match.speed_limit_kmh
             from samples smp
             left join lateral (
                 select
                     rs.id as road_segment_id,
                     rs.danger_score,
+                    rs.aadt,
+                    rs.speed_limit_kmh,
                     ST_Distance(rs.geom::geography, smp.pt::geography) as gap_m,
                     -- what a rider would call this road, used to split one
                     -- flagged stretch from the next
-                    coalesce(rs.ref, rs.name, rs.highway_type) as road_key
+                    coalesce(rs.ref, rs.name, rs.highway_type) as road_key,
+                    -- what it would be called out loud, which a road class
+                    -- is not: an unnamed lane is named by nothing here
+                    nullif(coalesce(rs.ref, rs.name), '') as road_name
                 from road_segments rs
                 cross join lateral (
                     select

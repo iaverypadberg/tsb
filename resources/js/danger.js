@@ -8,7 +8,7 @@
  * carries its score as a number on its card, so the colour is never the only
  * thing saying how bad a road is.
  */
-export const SAFE_COLOR = '#2563eb';
+export const SAFE_COLOR = '#898781';
 
 /**
  * A road the rider has picked out to flag. Violet is nowhere on the danger
@@ -17,13 +17,41 @@ export const SAFE_COLOR = '#2563eb';
 export const SELECTED_COLOR = '#7c3aed';
 
 export const DANGER_SCALE = [
-    { upTo: 69, color: '#EFC744', label: 'Moderate' },
-    { upTo: 89, color: '#FB7F4A', label: 'Bad' },
-    { upTo: 100, color: '#b91c1c', label: 'Severe' },
+    { upTo: 69, color: '#ffd166', label: 'Moderate' },
+    { upTo: 89, color: '#fb8500', label: 'Bad' },
+    { upTo: 100, color: '#ef476f', label: 'Severe' },
 ];
 
 export function dangerColor(score) {
     return (DANGER_SCALE.find((step) => score <= step.upTo) ?? DANGER_SCALE[DANGER_SCALE.length - 1]).color;
+}
+
+/**
+ * How busy a road is, as a sequential ramp: one hue, darkening with the
+ * traffic. Teal rather than a step of the danger ramp or the route's own
+ * blue, so that flipping the map between the two colourings never leaves a
+ * colour meaning one thing in one mode and something else in the other.
+ *
+ * Four steps, validated light->dark against the light map surface: the
+ * basemap tiles are the same pale raster whichever theme the page is in, so
+ * the dark surface is not what these are read against.
+ *
+ * Roads nobody has counted are not the quiet end of this scale, they are off
+ * it, so they are drawn in a neutral grey rather than in a step of the ramp.
+ * Having no chroma at all is what sets it apart from the teals; the key says
+ * which is which in words, since the hues alone are close for a colour-blind
+ * reader.
+ */
+export const TRAFFIC_SCALE = {
+    quiet: '#a4cefc',
+    moderate: '#4b9cf9',
+    busy: '#1557c0',
+    heavy: '#0f3375',
+    not_counted: '#898781',
+};
+
+export function trafficColor(band) {
+    return TRAFFIC_SCALE[band] ?? TRAFFIC_SCALE.not_counted;
 }
 
 /**

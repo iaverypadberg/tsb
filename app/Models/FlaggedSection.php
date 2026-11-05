@@ -13,7 +13,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Carbon;
 
 /**
- * A continuous stretch of a route that the analysis considers too dangerous.
+ * A continuous stretch of a route, as one analysis of it found it.
+ *
+ * Every analysis writes the route out as a sequence of these: the stretches
+ * `flagged` as too dangerous for the rider's threshold, and the ones in
+ * between that were not. Both are kept so the route can be read in order,
+ * rather than as warnings against a blank.
  *
  * `start_fraction` and `end_fraction` locate it along the parent route line,
  * which is what lets a detour be spliced in with ST_LineSubstring later.
@@ -25,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property LineString $geom
  * @property int $length_m
  * @property int $max_danger
+ * @property bool $flagged
  * @property list<string>|null $reasons
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -36,6 +42,7 @@ use Illuminate\Support\Carbon;
     'geom',
     'length_m',
     'max_danger',
+    'flagged',
     'reasons',
 ])]
 class FlaggedSection extends Model
@@ -56,6 +63,7 @@ class FlaggedSection extends Model
             'end_fraction' => 'float',
             'length_m' => 'integer',
             'max_danger' => 'integer',
+            'flagged' => 'boolean',
             'reasons' => 'array',
         ];
     }

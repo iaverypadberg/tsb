@@ -3,6 +3,8 @@
 namespace App\Console\Commands\Osm;
 
 use App\Actions\RoadSegments\InterpretOsmHighway;
+use App\Actions\RoadSegments\ScoreCrashHistory;
+use App\Actions\RoadSegments\ScoreTrafficVolume;
 use App\Models\SegmentReport;
 use Illuminate\Console\Command;
 use Illuminate\Database\Query\Builder;
@@ -129,7 +131,10 @@ class BuildRoadSegments extends Command
      */
     private function mergeIntoRoadSegments(): int
     {
-        $written = DB::affectingStatement(<<<'SQL'
+        $traffic = ScoreTrafficVolume::sqlExpression('measured.aadt', 's.bike_infra', 'h.highway');
+        $crashes = ScoreCrashHistory::sqlExpression('measured.crash_count', 'h.geom');
+
+        $written = DB::affectingStatement(<<<SQL
             insert into road_segments (
                 osm_way_id, name, ref, geom, highway_type, surface, speed_limit_kmh,
                 lanes, has_shoulder, bike_infra, danger_score, base_danger_score, source,
@@ -138,7 +143,8 @@ class BuildRoadSegments extends Command
             select
                 h.osm_way_id, h.name, h.ref, h.geom, h.highway, h.surface, s.speed_limit_kmh,
                 s.lanes, s.has_shoulder, s.bike_infra,
-                least(100, s.danger_score + coalesce(r.boost, 0)), s.danger_score, 'osm',
+                greatest(0, least(100, s.danger_score + coalesce(r.boost, 0) + ({$traffic}) + ({$crashes}))),
+                s.danger_score, 'osm',
                 now(), now()
             from osm_segment_scores s
             join osm_highways h using (osm_way_id)
@@ -151,6 +157,15 @@ class BuildRoadSegments extends Command
                 where existing.osm_way_id is not null
                 group by existing.osm_way_id
             ) r on r.osm_way_id = h.osm_way_id
+            left join (
+                -- The counts and crash totals live on the stored road, not
+                -- in the extract, and an upsert leaves them alone. Reading
+                -- them back means a reimport keeps both terms instead of
+                -- dropping them until the matchers are run again.
+                select id, osm_way_id, aadt, crash_count
+                from road_segments
+                where osm_way_id is not null
+            ) measured on measured.osm_way_id = h.osm_way_id
             on conflict (osm_way_id) do update set
                 name = excluded.name,
                 ref = excluded.ref,

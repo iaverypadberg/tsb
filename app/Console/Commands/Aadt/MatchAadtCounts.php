@@ -51,8 +51,10 @@ class MatchAadtCounts extends Command
         $this->components->twoColumnDetail('Year', (string) $result['year']);
         $this->components->twoColumnDetail('Roads measured', $this->formatCount($result['roads_measured']));
         $this->components->twoColumnDetail('Section matches', $this->formatCount($result['matches']));
+        $this->components->twoColumnDetail('Roads rescored', $this->formatCount($result['rescored']));
 
         $this->reportAgreement($result['compared'], $result['agreeing'], $result['unchecked']);
+        $this->reportRejections($result['wrong_route'], $result['rivalled']);
         $this->reportCoverage();
 
         return self::SUCCESS;
@@ -92,6 +94,33 @@ class MatchAadtCounts extends Command
                 .'Something has drifted: check the buffer and bearing limits before trusting these counts.'
             );
         }
+    }
+
+    /**
+     * What the geometry offered and the rest of the matching turned down.
+     *
+     * A sample is refused either because the count is of a numbered route
+     * the road is not on, or because a road nearer the section is the one it
+     * was drawn for. Both are counts that used to land on whatever ran
+     * alongside a highway, so the figures are the size of the correction
+     * rather than a fault: on the 2025 counts they are what keeps US 2 off
+     * the bike path beside it.
+     */
+    private function reportRejections(int $wrongRoute, int $rivalled): void
+    {
+        if ($wrongRoute === 0 && $rivalled === 0) {
+            return;
+        }
+
+        $this->components->twoColumnDetail(
+            'Refused as another route\'s',
+            $this->formatCount($wrongRoute).' samples',
+        );
+
+        $this->components->twoColumnDetail(
+            'Refused to a nearer road',
+            $this->formatCount($rivalled).' samples',
+        );
     }
 
     /**

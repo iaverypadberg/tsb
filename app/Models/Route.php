@@ -25,6 +25,8 @@ use Illuminate\Support\Carbon;
  * @property int $elevation_gain_m
  * @property int $point_count
  * @property string|null $original_gpx_path
+ * @property string $traffic_status
+ * @property Carbon|null $traffic_profiled_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -38,6 +40,8 @@ use Illuminate\Support\Carbon;
     'elevation_gain_m',
     'point_count',
     'original_gpx_path',
+    'traffic_status',
+    'traffic_profiled_at',
 ])]
 class Route extends Model
 {
@@ -55,6 +59,23 @@ class Route extends Model
     public const SOURCE_RWGPS = 'rwgps';
 
     /**
+     * Nobody has looked at this route's traffic yet.
+     *
+     * The state a route uploaded before traffic profiling existed sits in,
+     * and the one that makes it queue itself when its page is opened.
+     */
+    public const TRAFFIC_UNPROFILED = 'unprofiled';
+
+    /**
+     * The job is dispatched and has not finished.
+     */
+    public const TRAFFIC_QUEUED = 'queued';
+
+    public const TRAFFIC_COMPLETED = 'completed';
+
+    public const TRAFFIC_FAILED = 'failed';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -66,6 +87,7 @@ class Route extends Model
             'distance_m' => 'integer',
             'elevation_gain_m' => 'integer',
             'point_count' => 'integer',
+            'traffic_profiled_at' => 'datetime',
         ];
     }
 
@@ -87,6 +109,24 @@ class Route extends Model
     public function analyses(): HasMany
     {
         return $this->hasMany(RouteAnalysis::class);
+    }
+
+    /**
+     * How much traffic the route carries, stretch by stretch.
+     *
+     * @return HasMany<TrafficSection, $this>
+     */
+    public function trafficSections(): HasMany
+    {
+        return $this->hasMany(TrafficSection::class);
+    }
+
+    /**
+     * Whether the traffic profile is still being worked out.
+     */
+    public function isProfilingTraffic(): bool
+    {
+        return in_array($this->traffic_status, [self::TRAFFIC_UNPROFILED, self::TRAFFIC_QUEUED], true);
     }
 
     /**

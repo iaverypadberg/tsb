@@ -30,8 +30,21 @@ class FlaggedSectionFactory extends Factory
             ], 4326),
             'length_m' => 1_400,
             'max_danger' => 80,
-            'reasons' => ['US 2', 'Primary', '89 km/h limit', 'No bike lane'],
+            'flagged' => true,
+            'reasons' => ['US 2', 'Primary', '55 mph limit', 'No bike lane'],
         ];
+    }
+
+    /**
+     * A stretch nothing was flagged on: one of the quiet parts of the ride.
+     */
+    public function unflagged(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'flagged' => false,
+            'max_danger' => 22,
+            'reasons' => ['Hollow Road', 'Residential', '25 mph limit'],
+        ]);
     }
 
     /**

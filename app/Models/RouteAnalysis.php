@@ -114,10 +114,32 @@ class RouteAnalysis extends Model
     }
 
     /**
+     * Every stretch this analysis cut the route into, flagged or not.
+     *
+     * @return HasMany<FlaggedSection, $this>
+     */
+    public function sections(): HasMany
+    {
+        return $this->hasMany(FlaggedSection::class);
+    }
+
+    /**
+     * The stretches that passed the rider's threshold.
+     *
      * @return HasMany<FlaggedSection, $this>
      */
     public function flaggedSections(): HasMany
     {
-        return $this->hasMany(FlaggedSection::class);
+        return $this->sections()->where('flagged', true);
+    }
+
+    /**
+     * The stretches in between, which are the rest of the ride.
+     *
+     * @return HasMany<FlaggedSection, $this>
+     */
+    public function unflaggedSections(): HasMany
+    {
+        return $this->sections()->where('flagged', false);
     }
 }

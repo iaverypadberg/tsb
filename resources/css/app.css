@@ -62,6 +62,38 @@ select:focus[data-flux-control] {
     @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-accent-foreground;
 }
 
+/* The card the rider last picked off the map, ringed so that the road they
+   clicked and the card the list scrolled to read as the same thing. It holds
+   for three seconds — long enough to find — and then fades, because once
+   they have found the card the ring is in the way of reading it.
+
+   The ring is drawn on an overlay rather than on the card so that it is an
+   opacity that fades, which costs nothing to animate, instead of a colour
+   fading through whatever the card is sitting on. */
+[data-traffic-section].is-revealed {
+    position: relative;
+}
+
+[data-traffic-section].is-revealed::after {
+    content: '';
+
+    @apply pointer-events-none absolute -inset-px rounded-lg ring-2 ring-accent;
+
+    animation: traffic-revealed 3.6s ease-out forwards;
+}
+
+@keyframes traffic-revealed {
+
+    0%,
+    83% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
 /* \[:where(&)\]:size-4 {
     @apply size-4;
 } */

@@ -1,6 +1,7 @@
 <?php
 
-use App\Models\Route;
+// TEMP: danger scoring is hidden until it is integrated back in.
+// use App\Models\Route;
 use App\Models\RouteAnalysis;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -77,34 +78,37 @@ it('keeps guests out of riding settings', function () {
     $this->get(route('riding.edit'))->assertRedirect(route('login'));
 });
 
-it('starts a route page on the riders saved setting', function () {
-    $user = User::factory()->create(['risk_tolerance' => RouteAnalysis::TOLERANCE_BRAVE]);
-    $route = Route::factory()->for($user)->create();
+// TEMP: danger scoring is hidden until it is integrated back in.
+// it('starts a route page on the riders saved setting', function () {
+//     $user = User::factory()->create(['risk_tolerance' => RouteAnalysis::TOLERANCE_BRAVE]);
+//     $route = Route::factory()->for($user)->create();
+//
+//     Livewire::actingAs($user)
+//         ->test('pages::routes.show', ['route' => $route])
+//         ->assertSet('riskTolerance', RouteAnalysis::TOLERANCE_BRAVE);
+// });
 
-    Livewire::actingAs($user)
-        ->test('pages::routes.show', ['route' => $route])
-        ->assertSet('riskTolerance', RouteAnalysis::TOLERANCE_BRAVE);
-});
+// TEMP: danger scoring is hidden until it is integrated back in.
+// it('keeps showing what a route was last analysed with, not the saved setting', function () {
+//     $user = User::factory()->create(['risk_tolerance' => RouteAnalysis::TOLERANCE_BRAVE]);
+//     $route = Route::factory()->for($user)->create();
+//
+//     RouteAnalysis::factory()->for($route)->completed()->tolerance(RouteAnalysis::TOLERANCE_CAUTIOUS)->create();
+//
+//     Livewire::actingAs($user)
+//         ->test('pages::routes.show', ['route' => $route])
+//         ->assertSet('riskTolerance', RouteAnalysis::TOLERANCE_CAUTIOUS);
+// });
 
-it('keeps showing what a route was last analysed with, not the saved setting', function () {
-    $user = User::factory()->create(['risk_tolerance' => RouteAnalysis::TOLERANCE_BRAVE]);
-    $route = Route::factory()->for($user)->create();
-
-    RouteAnalysis::factory()->for($route)->completed()->tolerance(RouteAnalysis::TOLERANCE_CAUTIOUS)->create();
-
-    Livewire::actingAs($user)
-        ->test('pages::routes.show', ['route' => $route])
-        ->assertSet('riskTolerance', RouteAnalysis::TOLERANCE_CAUTIOUS);
-});
-
-it('runs the analysis at whatever the page was set to', function () {
-    $user = User::factory()->create(['risk_tolerance' => RouteAnalysis::TOLERANCE_CAUTIOUS]);
-    $route = Route::factory()->for($user)->create();
-
-    Livewire::actingAs($user)
-        ->test('pages::routes.show', ['route' => $route])
-        ->call('analyse')
-        ->assertHasNoErrors();
-
-    expect($route->analyses()->sole()->risk_tolerance)->toBe(RouteAnalysis::TOLERANCE_CAUTIOUS);
-});
+// TEMP: danger scoring is hidden until it is integrated back in.
+// it('runs the analysis at whatever the page was set to', function () {
+//     $user = User::factory()->create(['risk_tolerance' => RouteAnalysis::TOLERANCE_CAUTIOUS]);
+//     $route = Route::factory()->for($user)->create();
+//
+//     Livewire::actingAs($user)
+//         ->test('pages::routes.show', ['route' => $route])
+//         ->call('analyse')
+//         ->assertHasNoErrors();
+//
+//     expect($route->analyses()->sole()->risk_tolerance)->toBe(RouteAnalysis::TOLERANCE_CAUTIOUS);
+// });

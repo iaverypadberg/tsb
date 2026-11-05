@@ -166,3 +166,113 @@ it('ignores unmatched samples however the threshold is set', function () {
 
     expect((new BuildFlaggedRuns)->handle($samples, threshold: 0, routeLengthMetres: 10_000))->toBeEmpty();
 });
+
+/**
+ * The unflagged runs are what a rider reads the flags against: without them
+ * a list of three warnings could be most of a route or three blemishes.
+ */
+it('covers the calm stretch between two flagged sections', function () {
+    $builder = new BuildFlaggedRuns;
+    $samples = samplesFrom([80, 80, 10, 10, 10, 80, 80]);
+
+    $flagged = $builder->handle($samples, threshold: 60, routeLengthMetres: 12_000);
+    $unflagged = $builder->unflaggedRuns($samples, $flagged, routeLengthMetres: 12_000);
+
+    expect($flagged)->toHaveCount(2)
+        ->and($unflagged)->toHaveCount(1)
+        ->and($unflagged[0]->flagged)->toBeFalse()
+        ->and($unflagged[0]->startFraction)->toBe($flagged[0]->endFraction)
+        ->and($unflagged[0]->endFraction)->toBe($flagged[1]->startFraction)
+        ->and($unflagged[0]->maxDanger)->toBe(10);
+});
+
+it('reports a wholly calm route as one unflagged stretch of the whole thing', function () {
+    $builder = new BuildFlaggedRuns;
+    $samples = samplesFrom([10, 10, 10, 10]);
+
+    $unflagged = $builder->unflaggedRuns(
+        $samples,
+        $builder->handle($samples, threshold: 60, routeLengthMetres: 10_000),
+        routeLengthMetres: 10_000,
+    );
+
+    expect($unflagged)->toHaveCount(1)
+        ->and($unflagged[0]->startFraction)->toBe(0.0)
+        ->and($unflagged[0]->endFraction)->toBe(1.0)
+        ->and($unflagged[0]->lengthMetres)->toBe(10_000);
+});
+
+it('finds nothing left over when the flags cover the route', function () {
+    $builder = new BuildFlaggedRuns;
+    $samples = samplesFrom([80, 80, 80, 80]);
+
+    $unflagged = $builder->unflaggedRuns(
+        $samples,
+        $builder->handle($samples, threshold: 60, routeLengthMetres: 10_000),
+        routeLengthMetres: 10_000,
+    );
+
+    expect($unflagged)->toBeEmpty();
+});
+
+it('reports the calm ends of a route either side of a flagged middle', function () {
+    $builder = new BuildFlaggedRuns;
+    $samples = samplesFrom([10, 10, 80, 80, 10, 10]);
+
+    $unflagged = $builder->unflaggedRuns(
+        $samples,
+        $builder->handle($samples, threshold: 60, routeLengthMetres: 10_000),
+        routeLengthMetres: 10_000,
+    );
+
+    expect($unflagged)->toHaveCount(2)
+        ->and($unflagged[0]->startFraction)->toBe(0.0)
+        ->and($unflagged[1]->endFraction)->toBe(1.0);
+});
+
+/**
+ * A brief dip below the threshold is the join between two flagged stretches,
+ * not a quiet stretch of its own.
+ */
+it('leaves out a gap too short to be a stretch of road', function () {
+    $builder = new BuildFlaggedRuns;
+    $samples = samplesFrom([80, 80, 80, 80, 80, 10, 80, 80, 80, 80, 80]);
+
+    // Ten sample steps over 400 m, so the lone calm sample stands for 40 m
+    // of road while the flagged stretches either side are 180 m each.
+    $flagged = $builder->handle($samples, threshold: 60, routeLengthMetres: 400);
+
+    expect($flagged)->toHaveCount(2)
+        ->and($builder->unflaggedRuns($samples, $flagged, routeLengthMetres: 400))->toBeEmpty();
+});
+
+/**
+ * It was too short to warn about on its own, which is not a reason to hide
+ * the score from the stretch it sits in.
+ */
+it('keeps the worst score of a flagged run too short to report', function () {
+    $builder = new BuildFlaggedRuns;
+    $samples = samplesFrom([10, 10, 10, 10, 75, 10, 10, 10, 10]);
+
+    // The one dangerous sample stands for an eighth of 200 m, so it is
+    // dropped as noise rather than reported as a section.
+    $flagged = $builder->handle($samples, threshold: 60, routeLengthMetres: 200);
+    $unflagged = $builder->unflaggedRuns($samples, $flagged, routeLengthMetres: 200);
+
+    expect($flagged)->toBeEmpty()
+        ->and($unflagged)->toHaveCount(1)
+        ->and($unflagged[0]->maxDanger)->toBe(75);
+});
+
+it('records every road an unflagged stretch runs along', function () {
+    $builder = new BuildFlaggedRuns;
+    $samples = samplesFrom([10, 10, 10]);
+
+    $unflagged = $builder->unflaggedRuns($samples, [], routeLengthMetres: 10_000);
+
+    expect($unflagged[0]->roadSegmentIds)->toBe([100, 101, 102]);
+});
+
+it('has nothing to report on a route with no samples at all', function () {
+    expect((new BuildFlaggedRuns)->unflaggedRuns([], [], routeLengthMetres: 10_000))->toBeEmpty();
+});

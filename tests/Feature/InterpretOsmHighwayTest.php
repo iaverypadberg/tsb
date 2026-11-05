@@ -20,6 +20,43 @@ it('reads united states speed limits as miles per hour', function (string $maxsp
     'empty' => ['', null],
 ]);
 
+/**
+ * The column is km/h, but the sign the rider is riding past is in mph, so
+ * the figure has to survive the round trip: a limit tagged "55 mph" has to
+ * read back as 55, not 54 or 56.
+ */
+it('reads a stored limit back as the miles per hour it was tagged with', function (string $maxspeed, int $mph) {
+    $stored = $this->interpret->speedLimitKmh($maxspeed);
+
+    expect($this->interpret->speedLimitMph($stored))->toBe($mph);
+})->with([
+    '15 mph' => ['15 mph', 15],
+    '25 mph' => ['25 mph', 25],
+    '30 mph' => ['30 mph', 30],
+    '35 mph' => ['35 mph', 35],
+    '40 mph' => ['40 mph', 40],
+    '45 mph' => ['45 mph', 45],
+    '50 mph' => ['50 mph', 50],
+    '55 mph' => ['55 mph', 55],
+    '65 mph' => ['65 mph', 65],
+]);
+
+/**
+ * A way tagged with a bare number was taken as km/h on the way in, so it
+ * converts honestly rather than landing on a round mph figure.
+ */
+it('converts a limit stored in kilometres per hour to the nearest mile', function () {
+    expect($this->interpret->speedLimitMph(50))->toBe(31);
+});
+
+/**
+ * An untagged road is unknown rather than slow, so nothing is invented for
+ * it on the way out either.
+ */
+it('leaves an untagged limit unknown rather than reading it as nought', function () {
+    expect($this->interpret->speedLimitMph(null))->toBeNull();
+});
+
 it('scores a quiet residential street as low danger', function () {
     $result = $this->interpret->handle([
         'highway' => 'residential',

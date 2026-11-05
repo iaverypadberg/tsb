@@ -2,6 +2,7 @@
 
 namespace App\Actions\Routes;
 
+use App\Jobs\ProfileRouteTraffic;
 use App\Models\Route;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
@@ -12,6 +13,10 @@ use Illuminate\Support\Facades\DB;
  *
  * The original file is kept so the export in a later phase can splice detours
  * into it and preserve per-point elevation, which the 2D route line drops.
+ *
+ * Working out the traffic on it is queued straight away rather than waited
+ * for: it is the first thing the route page can show, and it does not depend
+ * on anything the rider has chosen yet.
  */
 class StoreGpxRoute
 {
@@ -29,7 +34,7 @@ class StoreGpxRoute
 
         $path = $file->store("routes/{$user->id}");
 
-        return DB::transaction(function () use ($user, $parsed, $path): Route {
+        $route = DB::transaction(function () use ($user, $parsed, $path): Route {
             $route = Route::create([
                 'user_id' => $user->id,
                 'name' => $parsed->name,
@@ -49,5 +54,11 @@ class StoreGpxRoute
 
             return $route->refresh();
         });
+
+        $route->update(['traffic_status' => Route::TRAFFIC_QUEUED]);
+
+        ProfileRouteTraffic::dispatch($route);
+
+        return $route;
     }
 }

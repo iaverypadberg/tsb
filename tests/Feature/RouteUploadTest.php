@@ -1,9 +1,11 @@
 <?php
 
+use App\Jobs\ProfileRouteTraffic;
 use App\Models\Route;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
@@ -34,6 +36,23 @@ it('stores an uploaded gpx file as a route', function () {
         ->and($route->name)->toBe('Montpelier loop')
         ->and($route->source)->toBe(Route::SOURCE_GPX)
         ->and($route->point_count)->toBe(5);
+});
+
+/**
+ * The traffic colouring is the first thing a new route can show, so the work
+ * behind it starts before the rider has asked for anything.
+ */
+it('queues the traffic profile as soon as a route lands', function () {
+    Queue::fake();
+
+    Livewire::test('pages::routes.upload')
+        ->set('gpx', gpxUpload(sampleGpx()))
+        ->call('save')
+        ->assertHasNoErrors();
+
+    Queue::assertPushed(ProfileRouteTraffic::class);
+
+    expect(Route::sole()->traffic_status)->toBe(Route::TRAFFIC_QUEUED);
 });
 
 it('measures distance in metres on the spheroid', function () {
