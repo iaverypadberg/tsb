@@ -20,9 +20,17 @@
                         {{ __('Routes') }}
                     </flux:sidebar.item>
 
-                    <flux:sidebar.item icon="flag" :href="route('flags.index')" :current="request()->routeIs('flags.*')" wire:navigate>
-                        {{ __('Flag a road') }}
-                    </flux:sidebar.item>
+                    {{-- Flagging a road is for riders with an account, so a guest
+                         follows this to the sign-up rather than to a login wall. --}}
+                    @auth
+                        <flux:sidebar.item icon="flag" :href="route('flags.index')" :current="request()->routeIs('flags.*')" wire:navigate>
+                            {{ __('Flag a road') }}
+                        </flux:sidebar.item>
+                    @else
+                        <flux:sidebar.item icon="flag" :href="route('register')">
+                            {{ __('Flag a road') }}
+                        </flux:sidebar.item>
+                    @endauth
 
                     @can('review', \App\Models\RoadFlag::class)
                         <flux:sidebar.item icon="inbox" :href="route('admin.road-flags')" :current="request()->routeIs('admin.*')" wire:navigate>
@@ -44,7 +52,19 @@
                 </flux:sidebar.item>
             </flux:sidebar.nav>
 
-            <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
+            @auth
+                <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
+            @else
+                <flux:sidebar.nav class="hidden lg:block">
+                    <flux:sidebar.item icon="user-plus" :href="route('register')">
+                        {{ __('Create an account') }}
+                    </flux:sidebar.item>
+
+                    <flux:sidebar.item icon="arrow-right-end-on-rectangle" :href="route('login')">
+                        {{ __('Log in') }}
+                    </flux:sidebar.item>
+                </flux:sidebar.nav>
+            @endauth
         </flux:sidebar>
 
         <!-- Mobile User Menu -->
@@ -53,6 +73,17 @@
 
             <flux:spacer />
 
+            @guest
+                <flux:button :href="route('login')" variant="subtle" size="sm">
+                    {{ __('Log in') }}
+                </flux:button>
+
+                <flux:button :href="route('register')" variant="primary" size="sm" class="ms-2">
+                    {{ __('Create an account') }}
+                </flux:button>
+            @endguest
+
+            @auth
             <flux:dropdown position="top" align="end">
                 <flux:profile
                     :initials="auth()->user()->initials()"
@@ -100,6 +131,7 @@
                     </form>
                 </flux:menu>
             </flux:dropdown>
+            @endauth
         </flux:header>
 
         {{ $slot }}

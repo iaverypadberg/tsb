@@ -7,6 +7,7 @@ use App\Models\User;
 use Clickbar\Magellan\Data\Geometries\LineString;
 use Clickbar\Magellan\Data\Geometries\Point;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * @extends Factory<Route>
@@ -44,6 +45,40 @@ class RouteFactory extends Factory
             'traffic_status' => Route::TRAFFIC_UNPROFILED,
             ...$this->attributesForCoordinates($coordinates),
         ];
+    }
+
+    /**
+     * A route uploaded before signing up, owned by a browser session.
+     *
+     * Carries a lifespan, because an unclaimed route always does.
+     */
+    public function guest(?string $token = null): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'user_id' => null,
+            'guest_token' => $token ?? (string) Str::uuid(),
+            'expires_at' => now()->addDays(Route::GUEST_LIFETIME_DAYS),
+        ]);
+    }
+
+    /**
+     * A route anyone holding the link may read.
+     */
+    public function shared(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'shared_at' => now(),
+        ]);
+    }
+
+    /**
+     * An unclaimed route whose time is already up.
+     */
+    public function expired(): static
+    {
+        return $this->guest()->state(fn (array $attributes): array => [
+            'expires_at' => now()->subMinute(),
+        ]);
     }
 
     /**

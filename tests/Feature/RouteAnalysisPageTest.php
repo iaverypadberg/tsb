@@ -812,3 +812,125 @@ it('does not let a user analyse someone elses route', function () {
     Livewire::test('pages::routes.show', ['route' => $theirs])
         ->assertForbidden();
 });
+
+it('breaks the ride down into kilometres on each sort of road', function () {
+    $this->route->update(['traffic_status' => Route::TRAFFIC_COMPLETED]);
+
+    TrafficSection::factory()->for($this->route)->carrying(500)->create(['length_m' => 4_000]);
+    TrafficSection::factory()->for($this->route)->carrying(2_000)->create(['length_m' => 4_000]);
+    TrafficSection::factory()->for($this->route)->carrying(18_000)->create(['length_m' => 2_000]);
+
+    $breakdown = Livewire::test('pages::routes.show', ['route' => $this->route])
+        ->instance()
+        ->trafficBreakdown;
+
+    expect($breakdown['km'])->toBe(10.0);
+    expect($breakdown['roads'])->toBe(3);
+
+    // Every band, quietest first, whether the route touches it or not: a key
+    // that changes shape from route to route cannot be compared across two.
+    expect(array_column($breakdown['bands'], 'percent', 'band'))->toBe([
+        'quiet' => 40.0,
+        'moderate' => 40.0,
+        'busy' => 0.0,
+        'heavy' => 20.0,
+    ]);
+
+    // An empty band is listed with nothing in it rather than left out.
+    expect(array_column($breakdown['bands'], 'km', 'band'))->toBe([
+        'quiet' => 4.0,
+        'moderate' => 4.0,
+        'busy' => 0.0,
+        'heavy' => 2.0,
+    ]);
+});
+
+it('reads a road with no published count as a quiet one', function () {
+    $this->route->update(['traffic_status' => Route::TRAFFIC_COMPLETED]);
+
+    TrafficSection::factory()->for($this->route)->carrying(500)->create(['length_m' => 2_000]);
+    TrafficSection::factory()->count(3)->for($this->route)->notCounted()->create(['length_m' => 2_000]);
+
+    $breakdown = Livewire::test('pages::routes.show', ['route' => $this->route])
+        ->instance()
+        ->trafficBreakdown;
+
+    // The uncounted roads are in the quiet band, not in one of their own.
+    expect(array_column($breakdown['bands'], 'band'))
+        ->toBe(['quiet', 'moderate', 'busy', 'heavy'])
+        ->not->toContain('not_counted');
+
+    $quiet = $breakdown['bands'][0];
+
+    expect($quiet['km'])->toBe(8.0);
+    expect($quiet['roads'])->toBe(4);
+    expect($quiet['percent'])->toBe(100.0);
+
+    // Kept separately, because it is the assumption the bar rests on.
+    expect($breakdown['uncounted'])->toBe(['km' => 6.0, 'roads' => 3]);
+});
+
+it('says how much of the bar rests on roads nobody has counted', function () {
+    $this->route->update(['traffic_status' => Route::TRAFFIC_COMPLETED]);
+
+    TrafficSection::factory()->for($this->route)->carrying(500)->create(['length_m' => 2_000]);
+    TrafficSection::factory()->count(2)->for($this->route)->notCounted()->create(['length_m' => 3_000]);
+
+    $this->get(route('routes.show', $this->route))
+        ->assertOk()
+        ->assertSee('Includes 6.0 km on 2 roads with no published count');
+});
+
+it('leaves the note off a route where every road has been counted', function () {
+    $this->route->update(['traffic_status' => Route::TRAFFIC_COMPLETED]);
+
+    TrafficSection::factory()->for($this->route)->carrying(500)->create();
+
+    $html = $this->get(route('routes.show', $this->route))->assertOk()->getContent();
+
+    expect($html)
+        ->toContain('data-test="band-chart"')
+        ->not->toContain('data-test="uncounted-note"');
+});
+
+it('names the counts each band covers', function () {
+    $this->route->update(['traffic_status' => Route::TRAFFIC_COMPLETED]);
+
+    TrafficSection::factory()->for($this->route)->carrying(500)->create();
+
+    $this->get(route('routes.show', $this->route))
+        ->assertOk()
+        ->assertSeeInOrder(['under 1,000', '1,000–4,000', '4,000–12,000', 'over 12,000'], escape: false);
+});
+
+it('draws one bar, each segment as wide as its own share', function () {
+    $this->route->update(['traffic_status' => Route::TRAFFIC_COMPLETED]);
+
+    TrafficSection::factory()->for($this->route)->carrying(500)->create(['length_m' => 5_000]);
+    TrafficSection::factory()->for($this->route)->carrying(18_000)->create(['length_m' => 2_500]);
+    TrafficSection::factory()->for($this->route)->notCounted()->create(['length_m' => 2_500]);
+
+    $html = $this->get(route('routes.show', $this->route))->assertOk()->getContent();
+
+    // One bar, not two.
+    expect(substr_count($html, 'data-test="band-chart"'))->toBe(1);
+    expect($html)->not->toContain('data-test="coverage-chart"');
+
+    // The 2.5 km nobody counted is in with the 5 km of quiet road, so quiet
+    // is three quarters of the ride against heavy's quarter.
+    expect($html)
+        ->toContain('width: 75%')
+        ->toContain('width: 25%');
+
+    // The two bands this route never touches are listed in the key but draw
+    // no segment, which the minimum width would otherwise give them.
+    expect($html)->not->toContain('width: 0%');
+});
+
+it('leaves the breakdown off a route whose traffic is not worked out', function () {
+    $this->route->update(['traffic_status' => Route::TRAFFIC_QUEUED]);
+
+    $this->get(route('routes.show', $this->route))
+        ->assertOk()
+        ->assertDontSee('What this ride is made of');
+});

@@ -4,7 +4,6 @@ namespace App\Actions\Routes;
 
 use App\Jobs\ProfileRouteTraffic;
 use App\Models\Route;
-use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 
@@ -25,18 +24,18 @@ class StoreGpxRoute
     /**
      * @throws InvalidGpxFile
      */
-    public function handle(User $user, UploadedFile $file): Route
+    public function handle(RouteOwner $owner, UploadedFile $file): Route
     {
         $parsed = $this->parser->handle(
             contents: (string) $file->get(),
             fallbackName: pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME) ?: __('Untitled route'),
         );
 
-        $path = $file->store("routes/{$user->id}");
+        $path = $file->store($owner->storageDirectory());
 
-        $route = DB::transaction(function () use ($user, $parsed, $path): Route {
+        $route = DB::transaction(function () use ($owner, $parsed, $path): Route {
             $route = Route::create([
-                'user_id' => $user->id,
+                ...$owner->attributes(),
                 'name' => $parsed->name,
                 'source' => Route::SOURCE_GPX,
                 'geom' => $parsed->geometry,

@@ -34,33 +34,27 @@
     $roadmap = [
         [
             'status' => 'done',
-            'when' => __('Shipped'),
-            'title' => __('Traffic on an uploaded route'),
-            'body' => __('A GPX upload is matched to the road network and every stretch coloured by its measured traffic count, with the roads the route runs on listed in the order it rides them and rankable by the busiest or the worst reported.'),
+            // 'when' => __('Shipped'),
+            'title' => __('Viewing of traffic data along a route'),
+            'body' => __('See an in depth breakdown of traffic, crashes & speed limits along your proposed route. Share the breakdown with friends to get your point across.'),
         ],
         [
             'status' => 'done',
-            'when' => __('Shipped'),
-            'title' => __('Crash history beside each road'),
-            'body' => __('What has actually been reported along the route: how much, how many were hurt, and whether anyone was on a bicycle or on foot.'),
-        ],
-        [
-            'status' => 'done',
-            'when' => __('Shipped'),
-            'title' => __('Flag a road yourself'),
-            'body' => __('Pick a road off the map, or trim the selection down to the part that is wrong, and say what is wrong with it.'),
+            // 'when' => __('Shipped'),
+            'title' => __('Flagging of dangerous roads'),
+            'body' => __('There is no replacement for local knowledge when it comes to dangerous roads. If you ride around the area and know about a dangerous road, please flag it so that new cyclists or folks coming from out of town know to avoid it.'),
         ],
         [
             'status' => 'current',
             'when' => __('In progress'),
             'title' => __('Danger scoring'),
-            'body' => __('Scoring each road out of 100 from its tags, its traffic and its crash record, then flagging the stretches of a route that pass your own risk threshold.'),
+            'body' => __("While traffic, crash and speed limit data are all useful data points when figuring out which roads to ride on, it can be a lot of information to look at. When this feature is implemented it will use all of these information sources and a customizable rider risk profile to flag roads."),
         ],
         [
             'status' => 'next',
             'when' => null,
-            'title' => __('Your next step here'),
-            'body' => __('This entry is a placeholder: edit the $roadmap list at the top of resources/views/dashboard.blade.php and this timeline follows.'),
+            'title' => __('What should we do next?'),
+            'body' => __('Send an email to iaverypadberg@gmail.com with ideas!'),
         ],
     ];
 
@@ -95,7 +89,7 @@
 
             <flux:text class="max-w-2xl">
                 <strong class="font-semibold">{{ __('Riding somewhere new?') }}</strong>
-                {{ __('Upload the route and Traffic Screening for Bikes(TSB) shows you which of its roads carry heavy traffic before you are out there in survival mode. Flag roads you think riders should be wary of.') }}
+                {{ __('Upload the route and Traffic Screening for Bikes(TSB) shows you which of its roads carry heavy traffic before you are out there in survival mode. With an account locals can flag roads riders should be wary of.') }}
             </flux:text>
 
             <div class="flex flex-wrap gap-3">
@@ -103,10 +97,24 @@
                     {{ __('Upload a route') }}
                 </flux:button>
 
-                <flux:button :href="route('flags.index')" variant="filled" icon="flag" wire:navigate>
-                    {{ __('Flag a road') }}
-                </flux:button>
+                @auth
+                    <flux:button :href="route('flags.index')" variant="filled" icon="flag" wire:navigate>
+                        {{ __('Flag a road') }}
+                    </flux:button>
+                @else
+                    <flux:button :href="route('register')" variant="filled" icon="flag">
+                        {{ __('Flag a road') }}
+                    </flux:button>
+                @endauth
             </div>
+
+            {{-- Said plainly up front, so neither button is a surprise: one
+                 needs nothing of the rider, the other needs an account. --}}
+            {{-- @guest
+                <flux:text class="max-w-2xl text-sm" data-test="guest-intro">
+                    {{ __('No account needed to upload your route!') }}
+                </flux:text>
+            @endguest --}}
         </section>
 
         {{-- <section class="flex flex-col gap-4" data-test="how-it-works">
@@ -133,8 +141,8 @@
              the one being built now, and the planned ones ahead. --}}
         <section class="flex flex-col gap-6" data-test="roadmap">
             <div class="flex flex-col gap-1">
-                <flux:heading size="lg" level="2">{{ __('Where this is going') }}</flux:heading>
-                <flux:text>{{ __('What is built, what is being built, and what comes after it.') }}</flux:text>
+                <flux:heading size="lg" level="2">{{ __('Where this project is going') }}</flux:heading>
+                {{-- <flux:text>{{ __('What is built, what is being built, and what comes after it.') }}</flux:text> --}}
             </div>
 
             {{-- role="list" because Tailwind's reset strips the list styling,

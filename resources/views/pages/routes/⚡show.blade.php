@@ -2,6 +2,7 @@
 
 use App\Actions\Aadt\TrafficBand;
 use App\Actions\Crashes\SummariseCrashesAlongRoute;
+use Flux\Flux;
 use App\Jobs\AnalyseRoute;
 use App\Jobs\ProfileRouteTraffic;
 use App\Models\FlaggedSection;
@@ -12,6 +13,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\View\View;
 use Livewire\Attributes\Computed;
@@ -138,6 +140,55 @@ new class extends Component {
      */
     public string $trafficSort = self::SORT_ROUTE;
 
+    /**
+     * Open the route up to anyone holding its link.
+     *
+     * The public id in the URL is already unguessable, so there is no second
+     * address to mint: sharing is this column, and withdrawing it is clearing
+     * the column again.
+     */
+    public function share(): void
+    {
+        $this->authorize('share', $this->route);
+
+        $this->route->update(['shared_at' => now()]);
+
+        Flux::toast(variant: 'success', text: __('Anyone with the link can now see this route.'));
+    }
+
+    /**
+     * Close it again. The link stops working for everyone who has it.
+     */
+    public function stopSharing(): void
+    {
+        $this->authorize('share', $this->route);
+
+        $this->route->update(['shared_at' => null]);
+
+        Flux::toast(text: __('The link no longer works.'));
+    }
+
+    /**
+     * The link to hand to someone else.
+     *
+     * The same URL the owner is reading, because a shared route is the same
+     * page seen by someone who does not own it.
+     */
+    #[Computed(persist: false)]
+    public function shareUrl(): string
+    {
+        return route('routes.show', $this->route);
+    }
+
+    /**
+     * Whether the person reading the page is the one who may hand it out.
+     */
+    #[Computed(persist: false)]
+    public function canShare(): bool
+    {
+        return Gate::allows('share', $this->route);
+    }
+
     public function mount(Route $route): void
     {
         $this->authorize('view', $route);
@@ -161,6 +212,12 @@ new class extends Component {
      */
     private function profileTrafficIfNeeded(): void
     {
+        // Someone who was sent the link is reading the route, not keeping it.
+        // Work on it belongs to whoever uploaded it.
+        if (! Gate::allows('share', $this->route)) {
+            return;
+        }
+
         if ($this->route->traffic_status !== Route::TRAFFIC_UNPROFILED) {
             return;
         }
@@ -579,6 +636,98 @@ new class extends Component {
     }
 
     /**
+     * What the ride is made of: how far it runs on each sort of road.
+     *
+     * Roads nobody has counted are read as quiet. That is a decision about
+     * the world rather than about the data: in Vermont the counted network is
+     * the numbered highways and the through roads, and what is left over is
+     * dirt lanes and back roads. A rider who finds themselves on one is not
+     * in traffic. Banding them as Quiet is the assumption a rider makes
+     * anyway, so the chart makes it out loud instead of leaving a grey wedge
+     * for them to interpret.
+     *
+     * It is still an assumption, so the figure behind it is kept and said
+     * beneath the bar. A route that is nine tenths uncounted is reading as
+     * nine tenths quiet on the strength of that assumption, and whoever is
+     * looking at it should be able to see how much of the claim rests there.
+     *
+     * The total is the summed length of the stretches rather than the route's
+     * own distance, because those are not the same number — a route runs on
+     * roads only for the part of it that could be matched to one — and a bar
+     * of shares that do not add up to its own total is a broken bar.
+     *
+     * @return array{
+     *     km: float,
+     *     roads: int,
+     *     uncounted: array{km: float, roads: int},
+     *     bands: list<array{band: string, label: string, range: string, shortRange: string, km: float, roads: int, percent: float, color: string}>,
+     * }
+     */
+    #[Computed(persist: false)]
+    public function trafficBreakdown(): array
+    {
+        $byBand = $this->trafficSections->groupBy(
+            fn (TrafficSection $section): string => $section->band->value,
+        );
+
+        $metres = fn (TrafficBand $band): float => $byBand->has($band->value) ? (float) $byBand[$band->value]->sum('length_m') : 0.0;
+        $roads = fn (TrafficBand $band): int => $byBand->has($band->value) ? $byBand[$band->value]->count() : 0;
+
+        // Every band, whether this route touches it or not. A key that lists
+        // only the bands present is a key that changes shape from route to
+        // route, and a rider comparing two of them is then comparing two
+        // different charts. An empty band is a finding of its own: no busy
+        // road on this ride at all.
+        $bands = array_values(array_filter(
+            TrafficBand::ladder(),
+            fn (TrafficBand $band): bool => $band !== TrafficBand::NotCounted,
+        ));
+
+        $uncountedMetres = $metres(TrafficBand::NotCounted);
+        $uncountedRoads = $roads(TrafficBand::NotCounted);
+
+        $totalMetres = array_sum(array_map($metres, $bands)) + $uncountedMetres;
+
+        if ($totalMetres <= 0) {
+            return [
+                'km' => 0.0,
+                'roads' => 0,
+                'uncounted' => ['km' => 0.0, 'roads' => 0],
+                'bands' => [],
+            ];
+        }
+
+        return [
+            'km' => round($totalMetres / 1000, 1),
+            'roads' => array_sum(array_map($roads, $bands)) + $uncountedRoads,
+            'uncounted' => [
+                'km' => round($uncountedMetres / 1000, 1),
+                'roads' => $uncountedRoads,
+            ],
+            'bands' => array_map(
+                function (TrafficBand $band) use ($metres, $roads, $uncountedMetres, $uncountedRoads, $totalMetres): array {
+                    $isQuiet = $band === TrafficBand::Quiet;
+
+                    $bandMetres = $metres($band) + ($isQuiet ? $uncountedMetres : 0.0);
+                    $bandRoads = $roads($band) + ($isQuiet ? $uncountedRoads : 0);
+
+                    return [
+                        'band' => $band->value,
+                        'label' => $band->label(),
+                        'range' => $band->range(),
+                        'shortRange' => $band->shortRange(),
+                        'km' => round($bandMetres / 1000, 1),
+                        'roads' => $bandRoads,
+                        'percent' => round(100 * $bandMetres / $totalMetres, 1),
+                        'color' => $band->color(),
+                    ];
+                },
+                $bands,
+            ),
+        ];
+    }
+
+    /**
      * Whether the traffic colouring is the one on the map.
      */
     #[Computed(persist: false)]
@@ -654,10 +803,58 @@ new class extends Component {
             </flux:text>
         </div>
 
-        <flux:button :href="route('routes.index')" variant="subtle" icon="arrow-left" wire:navigate>
-            {{ __('All routes') }}
-        </flux:button>
+        @auth
+            <flux:button :href="route('routes.index')" variant="subtle" icon="arrow-left" wire:navigate>
+                {{ __('All routes') }}
+            </flux:button>
+        @else
+            <flux:button :href="route('routes.index')" variant="subtle" icon="arrow-up-tray" wire:navigate>
+                {{ __('Upload another') }}
+            </flux:button>
+        @endauth
     </div>
+
+    {{-- When a route goes away is the one thing neither the person who
+         uploaded it nor the person they sent it to can be left to find out
+         for themselves. The owner is told what to do about it; a recipient is
+         only told the date, since it is not theirs to keep. --}}
+    @can('share', $route)
+        @if ($route->isGuestUpload())
+            <flux:callout icon="user-plus" color="blue" data-test="claim-prompt">
+                <flux:callout.heading>{{ __('Create an account to keep this route') }}</flux:callout.heading>
+
+                <flux:callout.text>
+                    {{ __('This route expires :when, on :date. Sign up to keep the route and use our road flagging feature.', [
+                        'when' => $route->expires_at->diffForHumans(),
+                        'date' => $route->expires_at->toFormattedDateString(),
+                    ]) }}
+                </flux:callout.text>
+
+                <x-slot name="actions">
+                    <flux:button :href="route('register')" variant="primary" size="sm" data-test="claim-register">
+                        {{ __('Create an account') }}
+                    </flux:button>
+
+                    <flux:button :href="route('login')" variant="ghost" size="sm">
+                        {{ __('Log in') }}
+                    </flux:button>
+                </x-slot>
+            </flux:callout>
+        @endif
+    @else
+        @if ($route->expires_at !== null)
+            <flux:callout icon="clock" color="amber" data-test="expiry-notice">
+                <flux:callout.heading>{{ __('This link has a time limit') }}</flux:callout.heading>
+
+                <flux:callout.text>
+                    {{ __('The route expires :when, on :date, unless whoever uploaded it creates an account to keep it.', [
+                        'when' => $route->expires_at->diffForHumans(),
+                        'date' => $route->expires_at->toFormattedDateString(),
+                    ]) }}
+                </flux:callout.text>
+            </flux:callout>
+        @endif
+    @endcan
 
     {{-- <dl class="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div class="rounded-xl border border-neutral-200 p-4 dark:border-neutral-700">
@@ -726,7 +923,7 @@ new class extends Component {
     @endif
     --}}
 
-    <div class="grid gap-4 @if ($this->hasTraffic) lg:grid-cols-3 @endif" data-test="map-layout">
+    <div class="grid gap-4 @if ($this->hasTraffic || $this->canShare) lg:grid-cols-3 @endif" data-test="map-layout">
         <div class="flex flex-col gap-3 lg:col-span-2">
             {{-- The colouring is a server property, not an Alpine one, because
                  the list beside the map is of whichever colouring is on: it
@@ -775,20 +972,90 @@ new class extends Component {
                     class="h-[24rem] w-full overflow-hidden rounded-xl border border-neutral-200 sm:h-[38rem] dark:border-neutral-700"
                 ></div>
             </div>
+
+            {{-- Beneath the map and inside its column, because it is the
+                 map's own figures counted up: a reader meets the ride first
+                 and then what it adds up to, and the bar lines up with the
+                 line it is a tally of. In the column rather than in a grid of
+                 its own so that the two stay the same width at every
+                 breakpoint without anything being kept in step by hand. --}}
+            @if ($this->hasTraffic)
+                <x-traffic-breakdown :breakdown="$this->trafficBreakdown" class="mt-1" />
+            @endif
         </div>
 
-        {{-- The list beside the map is of whichever colouring is on it: the
-             flags when the route is coloured by danger, the roads it runs on
-             when it is coloured by traffic. --}}
-        @if ($this->hasTraffic)
-            {{-- data-scroll-panel: the map scrolls this column to the card
-                 for a road clicked on it, and scrolls the column rather
-                 than the page so the map stays where the rider can see it. --}}
-            <div
-                class="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1 lg:h-[38rem]"
-                data-scroll-panel
-                data-test="section-panel"
-            >
+        {{-- The column beside the map: the share box, then the list of
+             whichever colouring is on the map — the flags when the route is
+             coloured by danger, the roads it runs on when it is coloured by
+             traffic. The column is held to the map's height so the two end
+             together, and only the list inside it scrolls. --}}
+        @if ($this->hasTraffic || $this->canShare)
+            <div class="flex min-h-0 flex-col gap-4 lg:h-[38rem]">
+                {{-- Sharing is the owner's to give and to take back. --}}
+                @can('share', $route)
+                    <div
+                        class="flex shrink-0 flex-col gap-2 rounded-xl border border-neutral-200 p-3 dark:border-neutral-700"
+                        data-test="share-panel"
+                    >
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <flux:heading level="2">{{ __('Share this route') }}</flux:heading>
+
+                            @if ($route->isShared())
+                                <flux:button wire:click="stopSharing" variant="subtle" size="sm" icon="link-slash" data-test="stop-sharing">
+                                    {{ __('Stop sharing') }}
+                                </flux:button>
+                            @else
+                                <flux:button wire:click="share" variant="primary" size="sm" icon="link" data-test="share-route">
+                                    {{ __('Create a share link') }}
+                                </flux:button>
+                            @endif
+                        </div>
+
+                        @if ($route->isShared())
+                            {{-- The confirmation is a toast rather than a swapped
+                                 label: this page re-renders itself every two
+                                 seconds while the traffic is being worked out,
+                                 and Livewire's morph would take any Alpine-held
+                                 state with it. --}}
+                            <div class="flex items-start gap-2" x-data>
+                                <flux:input
+                                    readonly
+                                    size="sm"
+                                    :value="$this->shareUrl"
+                                    class="font-mono text-xs"
+                                    data-test="share-url"
+                                    x-on:focus="$el.select()"
+                                />
+
+                                <flux:button
+                                    variant="filled"
+                                    size="sm"
+                                    icon="clipboard"
+                                    x-on:click="
+                                        navigator.clipboard.writeText(@js($this->shareUrl));
+                                        $dispatch('toast-show', {
+                                            duration: 3000,
+                                            slots: { text: @js(__('Link copied.')) },
+                                            dataset: { variant: 'success' },
+                                        });
+                                    "
+                                >
+                                    {{ __('Copy') }}
+                                </flux:button>
+                            </div>
+                        @endif
+                    </div>
+                @endcan
+
+                {{-- data-scroll-panel: the map scrolls this column to the card
+                     for a road clicked on it, and scrolls the column rather
+                     than the page so the map stays where the rider can see it. --}}
+                @if ($this->hasTraffic)
+                    <div
+                        class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1"
+                        data-scroll-panel
+                        data-test="section-panel"
+                    >
                 {{-- TEMP: danger scoring is hidden until it is integrated back in.
                 @if (! $this->isColouredByTraffic)
                     <div class="flex flex-col gap-4" data-test="danger-panel">
@@ -829,52 +1096,54 @@ new class extends Component {
                     </div>
                 @else
                 --}}
-                    <div class="flex flex-col gap-3" data-test="traffic-panel">
-                        <flux:heading size="lg">
-                            {{ trans_choice('{1}:count road|[2,*]:count total roads', $this->rankedTrafficSections->count(), ['count' => $this->rankedTrafficSections->count()]) }}
-                        </flux:heading>
+                        <div class="flex flex-col gap-3" data-test="traffic-panel">
+                            <flux:heading size="lg">
+                                {{ trans_choice('{1}:count road|[2,*]:count total roads', $this->rankedTrafficSections->count(), ['count' => $this->rankedTrafficSections->count()]) }}
+                            </flux:heading>
 
-                        {{-- Held at the top of the column: the list runs
-                             longer than the column is tall, and a rider who
-                             has scrolled into the middle of a route should
-                             not have to scroll back out of it to reorder
-                             what they are reading. The background is the
-                             page's own, so the cards pass behind it rather
-                             than through it. --}}
-                        <div
-                            class="sticky top-0 z-10 bg-white pb-1 dark:bg-zinc-800"
-                            data-scroll-panel-header
-                            data-test="traffic-sort-sticky"
-                        >
-                            <flux:select
-                                wire:model.live="trafficSort"
-                                size="sm"
-                                :label="__('Order by')"
-                                data-test="traffic-sort"
+                            {{-- Held at the top of the column: the list runs
+                                 longer than the column is tall, and a rider who
+                                 has scrolled into the middle of a route should
+                                 not have to scroll back out of it to reorder
+                                 what they are reading. The background is the
+                                 page's own, so the cards pass behind it rather
+                                 than through it. --}}
+                            <div
+                                class="sticky top-0 z-10 bg-white pb-1 dark:bg-zinc-800"
+                                data-scroll-panel-header
+                                data-test="traffic-sort-sticky"
                             >
-                                @foreach ($this->trafficSortOptions as $value => $label)
-                                    <flux:select.option :value="$value">{{ $label }}</flux:select.option>
-                                @endforeach
-                            </flux:select>
-                        </div>
-
-                        @if ($this->rankedTrafficSections->isEmpty())
-                            <flux:text class="text-sm" data-test="traffic-list-empty">
-                                {{ __('Nothing to list: no road on this route has a published traffic count or a reported crash beside it.') }}
-                            </flux:text>
-                        @else
-                            <div class="flex flex-col gap-2" data-test="traffic-list">
-                                @foreach ($this->rankedTrafficSections as $section)
-                                    <x-traffic-section
-                                        :section="$section"
-                                        :crashes="$this->trafficCrashes[$section->id] ?? []"
-                                        :wire:key="'traffic-'.$section->id"
-                                    />
-                                @endforeach
+                                <flux:select
+                                    wire:model.live="trafficSort"
+                                    size="sm"
+                                    :label="__('Order by')"
+                                    data-test="traffic-sort"
+                                >
+                                    @foreach ($this->trafficSortOptions as $value => $label)
+                                        <flux:select.option :value="$value">{{ $label }}</flux:select.option>
+                                    @endforeach
+                                </flux:select>
                             </div>
-                        @endif
-                    </div>
+
+                            @if ($this->rankedTrafficSections->isEmpty())
+                                <flux:text class="text-sm" data-test="traffic-list-empty">
+                                    {{ __('Nothing to list: no road on this route has a published traffic count or a reported crash beside it.') }}
+                                </flux:text>
+                            @else
+                                <div class="flex flex-col gap-2" data-test="traffic-list">
+                                    @foreach ($this->rankedTrafficSections as $section)
+                                        <x-traffic-section
+                                            :section="$section"
+                                            :crashes="$this->trafficCrashes[$section->id] ?? []"
+                                            :wire:key="'traffic-'.$section->id"
+                                        />
+                                    @endforeach
+                                </div>
+                            @endif
+                        </div>
                 {{-- TEMP: danger scoring is hidden until it is integrated back in. @endif --}}
+                    </div>
+                @endif
             </div>
         @endif
     </div>

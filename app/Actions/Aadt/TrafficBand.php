@@ -86,17 +86,42 @@ enum TrafficBand: string
     public function range(): string
     {
         return match ($this) {
-            self::Quiet => __('Under :count a day', ['count' => number_format(self::MODERATE_FROM)]),
-            self::Moderate => __(':from–:to a day', [
+            self::Quiet => __('Under :count cars a day', ['count' => number_format(self::MODERATE_FROM)]),
+            self::Moderate => __(':from–:to cars a day', [
                 'from' => number_format(self::MODERATE_FROM),
                 'to' => number_format(self::BUSY_FROM),
             ]),
-            self::Busy => __(':from–:to a day', [
+            self::Busy => __(':from–:to cars a day', [
                 'from' => number_format(self::BUSY_FROM),
                 'to' => number_format(self::HEAVY_FROM),
             ]),
-            self::Heavy => __('Over :count a day', ['count' => number_format(self::HEAVY_FROM)]),
+            self::Heavy => __('Over :count cars a day', ['count' => number_format(self::HEAVY_FROM)]),
             self::NotCounted => __('No count published'),
+        };
+    }
+
+    /**
+     * The counts the band covers, short enough to sit in a column.
+     *
+     * The same figures as {@see range()} without the unit, for a key that
+     * can say "cars/day" once at the top of the column instead of five times
+     * down it. "cars/day" rather than "cars a day" because that is how the
+     * road cards along the map say it.
+     */
+    public function shortRange(): string
+    {
+        return match ($this) {
+            self::Quiet => __('under :count', ['count' => number_format(self::MODERATE_FROM)]),
+            self::Moderate => __(':from–:to', [
+                'from' => number_format(self::MODERATE_FROM),
+                'to' => number_format(self::BUSY_FROM),
+            ]),
+            self::Busy => __(':from–:to', [
+                'from' => number_format(self::BUSY_FROM),
+                'to' => number_format(self::HEAVY_FROM),
+            ]),
+            self::Heavy => __('over :count', ['count' => number_format(self::HEAVY_FROM)]),
+            self::NotCounted => __('no count'),
         };
     }
 
@@ -116,6 +141,26 @@ enum TrafficBand: string
             self::Busy => 'indigo',
             self::Heavy => 'violet',
             self::NotCounted => 'zinc',
+        };
+    }
+
+    /**
+     * The band's colour on the traffic ramp, as a hex value.
+     *
+     * The twin of TRAFFIC_SCALE in resources/js/danger.js, which is what
+     * draws the lines on the map. The two have to be read as the same ramp by
+     * anyone looking at a chart and a map side by side, so a change to one is
+     * a change to both. Repeated rather than handed to JS from here because
+     * Leaflet needs the literals at draw time and the chart is server-rendered.
+     */
+    public function color(): string
+    {
+        return match ($this) {
+            self::Quiet => '#a4cefc',
+            self::Moderate => '#4b9cf9',
+            self::Busy => '#1557c0',
+            self::Heavy => '#0f3375',
+            self::NotCounted => '#898781',
         };
     }
 

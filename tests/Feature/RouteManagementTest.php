@@ -3,18 +3,65 @@
 use App\Models\Route;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
-it('redirects guests away from the route list', function () {
-    $this->get(route('routes.index'))->assertRedirect(route('login'));
+it('offers a guest the uploader', function () {
+    $this->get(route('routes.index'))
+        ->assertOk()
+        ->assertSee('Upload route')
+        ->assertSee('No routes yet');
 });
 
-it('redirects guests away from a route page', function () {
+it('does not let a guest view a route they did not upload', function () {
     $route = Route::factory()->create();
 
-    $this->get(route('routes.show', $route))->assertRedirect(route('login'));
+    $this->get(route('routes.show', $route))->assertForbidden();
+});
+
+/**
+ * A counter in the URL would tell whoever holds the link how many routes the
+ * site has, and where in that pile theirs landed.
+ */
+it('identifies a route in its url by the public id', function () {
+    $route = Route::factory()->create();
+
+    expect($route->public_id)->not->toBeNull()
+        ->and(route('routes.show', $route))->toEndWith('/routes/'.$route->public_id);
+});
+
+it('gives every upload a public id of its own', function () {
+    $first = Route::factory()->create();
+    $second = Route::factory()->create();
+
+    expect($first->public_id)->not->toBe($second->public_id);
+});
+
+it('does not serve a route by its number', function () {
+    $user = User::factory()->create();
+    $route = Route::factory()->for($user)->create();
+
+    $this->actingAs($user)
+        ->get('/routes/'.$route->id)
+        ->assertNotFound();
+});
+
+it('does not serve a route for an id that belongs to nothing', function () {
+    $this->actingAs(User::factory()->create())
+        ->get('/routes/'.Str::uuid())
+        ->assertNotFound();
+});
+
+it('links the route list to the public id', function () {
+    $user = User::factory()->create();
+    $route = Route::factory()->for($user)->create();
+
+    $this->actingAs($user)
+        ->get(route('routes.index'))
+        ->assertOk()
+        ->assertSee($route->public_id);
 });
 
 it('lists only the signed in users routes', function () {
