@@ -987,163 +987,175 @@ new class extends Component {
         {{-- The column beside the map: the share box, then the list of
              whichever colouring is on the map — the flags when the route is
              coloured by danger, the roads it runs on when it is coloured by
-             traffic. The column is held to the map's height so the two end
-             together, and only the list inside it scrolls. --}}
+             traffic. Only the list inside it scrolls.
+
+             The column runs the full height of the row, which is to say down
+             to the foot of the breakdown beneath the map, and its contents are
+             taken out of the flow to get there. Were they left in it, this
+             column's own length would be what set the row's height: a route
+             with forty roads on it would stretch the row to forty cards, the
+             map would be stranded at the top of a column of whitespace, and
+             nothing would scroll because nothing would be too tall to fit.
+             Absolute against a stretched grid item inverts that — the left
+             column says how tall the row is, and the list takes what it is
+             given and scrolls the rest. --}}
         @if ($this->hasTraffic || $this->canShare)
-            <div class="flex min-h-0 flex-col gap-4 lg:h-[38rem]">
-                {{-- Sharing is the owner's to give and to take back. --}}
-                @can('share', $route)
-                    <div
-                        class="flex shrink-0 flex-col gap-2 rounded-xl border border-neutral-200 p-3 dark:border-neutral-700"
-                        data-test="share-panel"
-                    >
-                        <div class="flex flex-wrap items-center justify-between gap-2">
-                            <flux:heading level="2">{{ __('Share this route') }}</flux:heading>
+            <div class="lg:relative">
+                <div class="flex min-h-0 flex-col gap-4 lg:absolute lg:inset-0">
+                    {{-- Sharing is the owner's to give and to take back. --}}
+                    @can('share', $route)
+                        <div
+                            class="flex shrink-0 flex-col gap-2 rounded-xl border border-neutral-200 p-3 dark:border-neutral-700"
+                            data-test="share-panel"
+                        >
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <flux:heading level="2">{{ __('Share this route') }}</flux:heading>
+
+                                @if ($route->isShared())
+                                    <flux:button wire:click="stopSharing" variant="subtle" size="sm" icon="link-slash" data-test="stop-sharing">
+                                        {{ __('Stop sharing') }}
+                                    </flux:button>
+                                @else
+                                    <flux:button wire:click="share" variant="primary" size="sm" icon="link" data-test="share-route">
+                                        {{ __('Create a share link') }}
+                                    </flux:button>
+                                @endif
+                            </div>
 
                             @if ($route->isShared())
-                                <flux:button wire:click="stopSharing" variant="subtle" size="sm" icon="link-slash" data-test="stop-sharing">
-                                    {{ __('Stop sharing') }}
-                                </flux:button>
-                            @else
-                                <flux:button wire:click="share" variant="primary" size="sm" icon="link" data-test="share-route">
-                                    {{ __('Create a share link') }}
-                                </flux:button>
-                            @endif
-                        </div>
+                                {{-- The confirmation is a toast rather than a swapped
+                                     label: this page re-renders itself every two
+                                     seconds while the traffic is being worked out,
+                                     and Livewire's morph would take any Alpine-held
+                                     state with it. --}}
+                                <div class="flex items-start gap-2" x-data>
+                                    <flux:input
+                                        readonly
+                                        size="sm"
+                                        :value="$this->shareUrl"
+                                        class="font-mono text-xs"
+                                        data-test="share-url"
+                                        x-on:focus="$el.select()"
+                                    />
 
-                        @if ($route->isShared())
-                            {{-- The confirmation is a toast rather than a swapped
-                                 label: this page re-renders itself every two
-                                 seconds while the traffic is being worked out,
-                                 and Livewire's morph would take any Alpine-held
-                                 state with it. --}}
-                            <div class="flex items-start gap-2" x-data>
-                                <flux:input
-                                    readonly
-                                    size="sm"
-                                    :value="$this->shareUrl"
-                                    class="font-mono text-xs"
-                                    data-test="share-url"
-                                    x-on:focus="$el.select()"
-                                />
-
-                                <flux:button
-                                    variant="filled"
-                                    size="sm"
-                                    icon="clipboard"
-                                    x-on:click="
-                                        navigator.clipboard.writeText(@js($this->shareUrl));
-                                        $dispatch('toast-show', {
-                                            duration: 3000,
-                                            slots: { text: @js(__('Link copied.')) },
-                                            dataset: { variant: 'success' },
-                                        });
-                                    "
-                                >
-                                    {{ __('Copy') }}
-                                </flux:button>
-                            </div>
-                        @endif
-                    </div>
-                @endcan
-
-                {{-- data-scroll-panel: the map scrolls this column to the card
-                     for a road clicked on it, and scrolls the column rather
-                     than the page so the map stays where the rider can see it. --}}
-                @if ($this->hasTraffic)
-                    <div
-                        class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1"
-                        data-scroll-panel
-                        data-test="section-panel"
-                    >
-                {{-- TEMP: danger scoring is hidden until it is integrated back in.
-                @if (! $this->isColouredByTraffic)
-                    <div class="flex flex-col gap-4" data-test="danger-panel">
-                        <div class="flex flex-col gap-3">
-                            <flux:heading size="lg">
-                                {{ trans_choice('{0}Nothing flagged|{1}:count flagged section|[2,*]:count flagged sections', $this->flaggedSections->count(), ['count' => $this->flaggedSections->count()]) }}
-                            </flux:heading>
-
-                            @if ($this->flaggedSections->isEmpty())
-                                <flux:callout variant="success" icon="check-circle" :heading="__('This route looks fine')">
-                                    {{ __('No stretch of this route passed your risk threshold.') }}
-                                </flux:callout>
-                            @else
-                                <div class="flex flex-col gap-2" data-test="flagged-list">
-                                    @foreach ($this->flaggedSections as $section)
-                                        <livewire:pages::routes.flagged-section :section="$section" :wire:key="'section-'.$section->id" />
-                                    @endforeach
+                                    <flux:button
+                                        variant="filled"
+                                        size="sm"
+                                        icon="clipboard"
+                                        x-on:click="
+                                            navigator.clipboard.writeText(@js($this->shareUrl));
+                                            $dispatch('toast-show', {
+                                                duration: 3000,
+                                                slots: { text: @js(__('Link copied.')) },
+                                                dataset: { variant: 'success' },
+                                            });
+                                        "
+                                    >
+                                        {{ __('Copy') }}
+                                    </flux:button>
                                 </div>
                             @endif
                         </div>
+                    @endcan
 
-                --}}
-                        {{-- The rest of the ride, so the flags can be read against what is not flagged. --}}
-                {{--
-                        @if ($this->unflaggedSections->isNotEmpty())
+                    {{-- data-scroll-panel: the map scrolls this column to the card
+                         for a road clicked on it, and scrolls the column rather
+                         than the page so the map stays where the rider can see it. --}}
+                    @if ($this->hasTraffic)
+                        <div
+                            class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1"
+                            data-scroll-panel
+                            data-test="section-panel"
+                        >
+                    {{-- TEMP: danger scoring is hidden until it is integrated back in.
+                    @if (! $this->isColouredByTraffic)
+                        <div class="flex flex-col gap-4" data-test="danger-panel">
                             <div class="flex flex-col gap-3">
                                 <flux:heading size="lg">
-                                    {{ trans_choice('{1}:count unflagged section|[2,*]:count unflagged sections', $this->unflaggedSections->count(), ['count' => $this->unflaggedSections->count()]) }}
+                                    {{ trans_choice('{0}Nothing flagged|{1}:count flagged section|[2,*]:count flagged sections', $this->flaggedSections->count(), ['count' => $this->flaggedSections->count()]) }}
                                 </flux:heading>
 
-                                <div class="flex flex-col gap-2" data-test="unflagged-list">
-                                    @foreach ($this->unflaggedSections as $section)
-                                        <livewire:pages::routes.flagged-section :section="$section" :wire:key="'section-'.$section->id" />
-                                    @endforeach
-                                </div>
-                            </div>
-                        @endif
-                    </div>
-                @else
-                --}}
-                        <div class="flex flex-col gap-3" data-test="traffic-panel">
-                            <flux:heading size="lg">
-                                {{ trans_choice('{1}:count road|[2,*]:count total roads', $this->rankedTrafficSections->count(), ['count' => $this->rankedTrafficSections->count()]) }}
-                            </flux:heading>
-
-                            {{-- Held at the top of the column: the list runs
-                                 longer than the column is tall, and a rider who
-                                 has scrolled into the middle of a route should
-                                 not have to scroll back out of it to reorder
-                                 what they are reading. The background is the
-                                 page's own, so the cards pass behind it rather
-                                 than through it. --}}
-                            <div
-                                class="sticky top-0 z-10 bg-white pb-1 dark:bg-zinc-800"
-                                data-scroll-panel-header
-                                data-test="traffic-sort-sticky"
-                            >
-                                <flux:select
-                                    wire:model.live="trafficSort"
-                                    size="sm"
-                                    :label="__('Order by')"
-                                    data-test="traffic-sort"
-                                >
-                                    @foreach ($this->trafficSortOptions as $value => $label)
-                                        <flux:select.option :value="$value">{{ $label }}</flux:select.option>
-                                    @endforeach
-                                </flux:select>
+                                @if ($this->flaggedSections->isEmpty())
+                                    <flux:callout variant="success" icon="check-circle" :heading="__('This route looks fine')">
+                                        {{ __('No stretch of this route passed your risk threshold.') }}
+                                    </flux:callout>
+                                @else
+                                    <div class="flex flex-col gap-2" data-test="flagged-list">
+                                        @foreach ($this->flaggedSections as $section)
+                                            <livewire:pages::routes.flagged-section :section="$section" :wire:key="'section-'.$section->id" />
+                                        @endforeach
+                                    </div>
+                                @endif
                             </div>
 
-                            @if ($this->rankedTrafficSections->isEmpty())
-                                <flux:text class="text-sm" data-test="traffic-list-empty">
-                                    {{ __('Nothing to list: no road on this route has a published traffic count or a reported crash beside it.') }}
-                                </flux:text>
-                            @else
-                                <div class="flex flex-col gap-2" data-test="traffic-list">
-                                    @foreach ($this->rankedTrafficSections as $section)
-                                        <x-traffic-section
-                                            :section="$section"
-                                            :crashes="$this->trafficCrashes[$section->id] ?? []"
-                                            :wire:key="'traffic-'.$section->id"
-                                        />
-                                    @endforeach
+                    --}}
+                            {{-- The rest of the ride, so the flags can be read against what is not flagged. --}}
+                    {{--
+                            @if ($this->unflaggedSections->isNotEmpty())
+                                <div class="flex flex-col gap-3">
+                                    <flux:heading size="lg">
+                                        {{ trans_choice('{1}:count unflagged section|[2,*]:count unflagged sections', $this->unflaggedSections->count(), ['count' => $this->unflaggedSections->count()]) }}
+                                    </flux:heading>
+
+                                    <div class="flex flex-col gap-2" data-test="unflagged-list">
+                                        @foreach ($this->unflaggedSections as $section)
+                                            <livewire:pages::routes.flagged-section :section="$section" :wire:key="'section-'.$section->id" />
+                                        @endforeach
+                                    </div>
                                 </div>
                             @endif
                         </div>
-                {{-- TEMP: danger scoring is hidden until it is integrated back in. @endif --}}
-                    </div>
-                @endif
+                    @else
+                    --}}
+                            <div class="flex flex-col gap-3" data-test="traffic-panel">
+                                <flux:heading size="lg">
+                                    {{ trans_choice('{1}:count road|[2,*]:count total roads', $this->rankedTrafficSections->count(), ['count' => $this->rankedTrafficSections->count()]) }}
+                                </flux:heading>
+
+                                {{-- Held at the top of the column: the list runs
+                                     longer than the column is tall, and a rider who
+                                     has scrolled into the middle of a route should
+                                     not have to scroll back out of it to reorder
+                                     what they are reading. The background is the
+                                     page's own, so the cards pass behind it rather
+                                     than through it. --}}
+                                <div
+                                    class="sticky top-0 z-10 bg-white pb-1 dark:bg-zinc-800"
+                                    data-scroll-panel-header
+                                    data-test="traffic-sort-sticky"
+                                >
+                                    <flux:select
+                                        wire:model.live="trafficSort"
+                                        size="sm"
+                                        :label="__('Order by')"
+                                        data-test="traffic-sort"
+                                    >
+                                        @foreach ($this->trafficSortOptions as $value => $label)
+                                            <flux:select.option :value="$value">{{ $label }}</flux:select.option>
+                                        @endforeach
+                                    </flux:select>
+                                </div>
+
+                                @if ($this->rankedTrafficSections->isEmpty())
+                                    <flux:text class="text-sm" data-test="traffic-list-empty">
+                                        {{ __('Nothing to list: no road on this route has a published traffic count or a reported crash beside it.') }}
+                                    </flux:text>
+                                @else
+                                    <div class="flex flex-col gap-2" data-test="traffic-list">
+                                        @foreach ($this->rankedTrafficSections as $section)
+                                            <x-traffic-section
+                                                :section="$section"
+                                                :crashes="$this->trafficCrashes[$section->id] ?? []"
+                                                :wire:key="'traffic-'.$section->id"
+                                            />
+                                        @endforeach
+                                    </div>
+                                @endif
+                            </div>
+                    {{-- TEMP: danger scoring is hidden until it is integrated back in. @endif --}}
+                        </div>
+                    @endif
+                </div>
             </div>
         @endif
     </div>

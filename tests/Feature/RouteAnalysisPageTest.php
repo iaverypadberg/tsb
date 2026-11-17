@@ -876,10 +876,24 @@ it('says how much of the bar rests on roads nobody has counted', function () {
     TrafficSection::factory()->for($this->route)->carrying(500)->create(['length_m' => 2_000]);
     TrafficSection::factory()->count(2)->for($this->route)->notCounted()->create(['length_m' => 3_000]);
 
-    $this->get(route('routes.show', $this->route))
-        ->assertOk()
-        ->assertSee('Includes 6.0 km on 2 roads with no published count');
+    $html = $this->get(route('routes.show', $this->route))->assertOk()->getContent();
+
+    // The figure, not the sentence around it: the wording of the note is
+    // copy, and copy is not this test's business.
+    expect(noteMarkup($html))->toContain('6.0 km');
 });
+
+/**
+ * The note beneath the bar, and nothing else on the page.
+ */
+function noteMarkup(string $html): string
+{
+    $start = strpos($html, 'data-test="uncounted-note"');
+
+    expect($start)->not->toBeFalse();
+
+    return substr($html, $start, (int) strpos($html, '</p>', $start) - $start);
+}
 
 it('leaves the note off a route where every road has been counted', function () {
     $this->route->update(['traffic_status' => Route::TRAFFIC_COMPLETED]);
