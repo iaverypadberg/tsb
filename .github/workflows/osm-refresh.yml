@@ -23,6 +23,11 @@ on:
         required: false
         default: true
         type: boolean
+      with_imports:
+        description: 'Also refresh traffic counts and crash records (needed on a first run)'
+        required: false
+        default: false
+        type: boolean
   schedule:
     # 03:00 America/New_York on the first of the month, give or take DST.
     - cron: '0 7 1 * *'
@@ -140,21 +145,31 @@ jobs:
           # rather than failing on it.
           gh release upload "${tag}" "${RUNNER_TEMP}/${ARTIFACT_NAME}" --clobber
 
+      # A scheduled run has no inputs, and Actions casts both null and false
+      # to 0, so `inputs.rebuild != false` would skip this on the cron.
       - name: Rebuild on Laravel Cloud
-        if: inputs.rebuild != false
+        if: github.event_name == 'schedule' || inputs.rebuild
         env:
           LARAVEL_CLOUD_TOKEN: ${{ secrets.LARAVEL_CLOUD_TOKEN }}
           TAG: ${{ steps.publish.outputs.tag }}
+          WITH_IMPORTS: ${{ inputs.with_imports }}
         run: |
           if [ -z "${LARAVEL_CLOUD_TOKEN}" ]; then
             echo "::error::LARAVEL_CLOUD_TOKEN is not set, so the artifact was published but nothing was rebuilt."
             exit 1
           fi
 
+          # The matches are skipped when their source tables are empty, so a
+          # first run has to fetch the traffic counts and crash records too.
+          extras=''
+          if [ "${WITH_IMPORTS}" = 'true' ]; then
+            extras=' --with-imports'
+          fi
+
           composer global require laravel/cloud-cli --no-interaction --no-progress
           "$(composer global config bin-dir --absolute --quiet)/cloud" command:run \
             "${CLOUD_ENVIRONMENT}" \
-            --cmd="php artisan roads:rebuild --release=${TAG}" \
+            --cmd="php artisan roads:rebuild --release=${TAG}${extras}" \
             -n
 
       - name: Summarise
