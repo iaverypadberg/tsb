@@ -1,0 +1,182 @@
+name: osm refresh
+
+# Rebuilds the OpenStreetMap road network and ships it to Laravel Cloud.
+#
+# `osm:import` shells out to osm2pgsql, which needs a native binary that the
+# Cloud runtime does not have. This runner does have one, so the import
+# happens here: the staging table is built, exported as an artifact, attached
+# to a dated release, and then loaded by Cloud, which rebuilds every derived
+# table from it.
+#
+# Geofabrik rebuilds its extracts once a day, so edits the OSM team makes
+# today show up in a run from tomorrow onwards.
+
+on:
+  workflow_dispatch:
+    inputs:
+      extract_url:
+        description: 'A .osm.pbf URL. Blank uses the configured default.'
+        required: false
+        type: string
+      rebuild:
+        description: 'Rebuild on Laravel Cloud once the artifact is published'
+        required: false
+        default: true
+        type: boolean
+  schedule:
+    # 03:00 America/New_York on the first of the month, give or take DST.
+    - cron: '0 7 1 * *'
+
+permissions:
+  contents: write
+
+# Two refreshes at once would publish two artifacts and race each other into
+# the same environment.
+concurrency:
+  group: osm-refresh
+  cancel-in-progress: false
+
+env:
+  CLOUD_ENVIRONMENT: production
+  ARTIFACT_NAME: osm_highways.ndjson.gz
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        # The same image as docker-compose, so osm2pgsql and PostGIS behave
+        # here as they do locally.
+        image: pgrouting/pgrouting:17-3.5-3.7
+        env:
+          POSTGRES_DB: bad_roads
+          POSTGRES_USER: bad_roads
+          POSTGRES_PASSWORD: secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bad_roads -d bad_roads"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: bad_roads
+      DB_USERNAME: bad_roads
+      DB_PASSWORD: secret
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+
+      - name: Install osm2pgsql
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends osm2pgsql
+          osm2pgsql --version
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare the application
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Migrate
+        run: php artisan migrate --force
+
+      # osm2pgsql drops and recreates osm_highways, so this has to follow the
+      # migration rather than precede it.
+      - name: Import the extract
+        env:
+          EXTRACT_URL: ${{ inputs.extract_url }}
+        run: |
+          if [ -n "${EXTRACT_URL}" ]; then
+            php artisan osm:import "${EXTRACT_URL}"
+          else
+            php artisan osm:import
+          fi
+
+      - name: Export the artifact
+        run: php artisan osm:export --path="${RUNNER_TEMP}/${ARTIFACT_NAME}"
+
+      # Reads the artifact back and checks it against its own header, so a
+      # short write is caught here rather than against the environment.
+      - name: Check the artifact reads back
+        run: php artisan osm:load "${RUNNER_TEMP}/${ARTIFACT_NAME}" --dry-run
+
+      - name: Publish the release
+        id: publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="osm-$(date -u +%Y-%m-%d)"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
+            gh release create "${tag}" \
+              --title "OSM road network ${tag#osm-}" \
+              --notes "Staged OpenStreetMap highways exported by run ${GITHUB_RUN_ID}." \
+              --latest=false
+          fi
+
+          # --clobber so a second run on the same day replaces the asset
+          # rather than failing on it.
+          gh release upload "${tag}" "${RUNNER_TEMP}/${ARTIFACT_NAME}" --clobber
+
+      - name: Rebuild on Laravel Cloud
+        if: inputs.rebuild != false
+        env:
+          LARAVEL_CLOUD_TOKEN: ${{ secrets.LARAVEL_CLOUD_TOKEN }}
+          TAG: ${{ steps.publish.outputs.tag }}
+        run: |
+          if [ -z "${LARAVEL_CLOUD_TOKEN}" ]; then
+            echo "::error::LARAVEL_CLOUD_TOKEN is not set, so the artifact was published but nothing was rebuilt."
+            exit 1
+          fi
+
+          composer global require laravel/cloud-cli --no-interaction --no-progress
+          "$(composer global config bin-dir --absolute --quiet)/cloud" command:run \
+            "${CLOUD_ENVIRONMENT}" \
+            --cmd="php artisan roads:rebuild --release=${TAG}" \
+            -n
+
+      - name: Summarise
+        if: always()
+        env:
+          TAG: ${{ steps.publish.outputs.tag }}
+          REBUILT: ${{ inputs.rebuild }}
+        run: |
+          {
+            echo "### OSM refresh"
+            echo
+            if [ -n "${TAG}" ]; then
+              echo "- Release: \`${TAG}\`"
+              echo "- Asset: \`${ARTIFACT_NAME}\`"
+            else
+              echo "- No release was published."
+            fi
+            if [ "${REBUILT}" = "false" ]; then
+              echo "- Cloud was not rebuilt. To apply it:"
+              echo
+              echo '  ```'
+              echo "  cloud command:run ${CLOUD_ENVIRONMENT} --cmd='php artisan roads:rebuild --release=${TAG}' -n"
+              echo '  ```'
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"

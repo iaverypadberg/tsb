@@ -43,6 +43,35 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Published artifact
+    |--------------------------------------------------------------------------
+    |
+    | `osm:import` shells out to osm2pgsql, which needs a native binary the
+    | Laravel Cloud runtime does not have. The osm-refresh workflow runs the
+    | import where a binary is available and publishes the staging table as a
+    | GitHub release asset; `osm:load` pulls it back down anywhere.
+    |
+    | The token needs read access to the repository contents, and nothing
+    | else. In CI the workflow's own GITHUB_TOKEN covers it.
+    |
+    */
+
+    'artifact' => [
+
+        'repository' => env('OSM_ARTIFACT_REPOSITORY', 'iaverypadberg/tsb'),
+
+        'token' => env('OSM_ARTIFACT_TOKEN'),
+
+        'tag_prefix' => env('OSM_ARTIFACT_TAG_PREFIX', 'osm-'),
+
+        'name' => env('OSM_ARTIFACT_NAME', 'osm_highways.ndjson.gz'),
+
+        'path' => storage_path('app/osm'),
+
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Service roads to skip
     |--------------------------------------------------------------------------
     |
