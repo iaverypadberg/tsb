@@ -204,11 +204,19 @@ new class extends Component {
     }
 
     /**
-     * Queue the traffic profile for a route uploaded before there was one.
+     * Queue the traffic profile for a route that has none and is not getting
+     * one.
      *
      * Marking it queued in the same breath as dispatching is what stops a
      * second view, or the poll below, piling up another job for work that is
-     * already in hand.
+     * already in hand. A route past its deadline is the other way round:
+     * nothing is in hand, whatever the status says, so opening the page asks
+     * again rather than reporting a failure nobody can act on.
+     *
+     * Asking again cannot run away with itself, because a fresh attempt
+     * stamps a fresh queueing time and so starts the deadline over. One
+     * attempt per route per deadline is the most a reader can provoke,
+     * however often they reload.
      */
     private function profileTrafficIfNeeded(): void
     {
@@ -218,13 +226,30 @@ new class extends Component {
             return;
         }
 
-        if ($this->route->traffic_status !== Route::TRAFFIC_UNPROFILED) {
+        $neverAsked = $this->route->traffic_status === Route::TRAFFIC_UNPROFILED;
+
+        if (! $neverAsked && ! $this->route->hasStalledTraffic()) {
             return;
         }
 
-        $this->route->update(['traffic_status' => Route::TRAFFIC_QUEUED]);
+        $this->route->update([
+            'traffic_status' => Route::TRAFFIC_QUEUED,
+            'traffic_queued_at' => now(),
+        ]);
 
-        ProfileRouteTraffic::dispatch($this->route);
+        // The claim is withdrawn if the queue will not take the job, so a
+        // page open that cannot enqueue leaves the route able to try again
+        // rather than stranded on "queued" with nothing working on it.
+        try {
+            ProfileRouteTraffic::dispatch($this->route);
+        } catch (\Throwable $e) {
+            $this->route->update([
+                'traffic_status' => Route::TRAFFIC_UNPROFILED,
+                'traffic_queued_at' => null,
+            ]);
+
+            report($e);
+        }
     }
 
     /**
@@ -948,7 +973,7 @@ new class extends Component {
                     <flux:icon.loading class="size-4" />
                     {{ __('Working out the traffic on this route…') }}
                 </flux:text>
-            @elseif ($this->route->traffic_status === \App\Models\Route::TRAFFIC_FAILED)
+            @elseif ($this->route->hasUnresolvedTraffic())
                 <flux:text class="text-sm" data-test="traffic-failed">
                     {{ __('The traffic on this route could not be worked out.') }}
                 </flux:text>

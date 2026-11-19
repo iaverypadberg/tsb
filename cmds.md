@@ -2,7 +2,7 @@
 
 ```
 php artisan osm:import                   # → osm_highways  (downloads the Vermont .pbf)
-php artisan osm:build-segments           # → road_segments + routing_edges
+php artisan osm:build-segments           # → road_segments
 
 php artisan aadt:import                  # → aadt_sections (queries the VTrans service)
 php artisan aadt:match                   # writes aadt onto each segment
@@ -14,6 +14,8 @@ php artisan db:seed                      # dev only: test@example.com + 3 routes
 ```
 
 The two `:match` steps must come after `osm:build-segments`, because it replaces segment geometry. If you ever re-run build-segments, re-run both matches after it.
+
+Nothing populates `routing_edges` — the table and `outline.md` describe a pgRouting graph that no code builds or reads yet. Rows in it locally were put there by hand.
 
 `php artisan roads:rebuild --skip-load` does the last five in the right order for you.
 

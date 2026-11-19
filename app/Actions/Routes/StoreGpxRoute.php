@@ -6,6 +6,7 @@ use App\Jobs\ProfileRouteTraffic;
 use App\Models\Route;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * Persists an uploaded GPX file as a route.
@@ -54,9 +55,27 @@ class StoreGpxRoute
             return $route->refresh();
         });
 
-        $route->update(['traffic_status' => Route::TRAFFIC_QUEUED]);
+        $route->update([
+            'traffic_status' => Route::TRAFFIC_QUEUED,
+            'traffic_queued_at' => now(),
+        ]);
 
-        ProfileRouteTraffic::dispatch($route);
+        // Marking it queued before handing it over is what stops a second
+        // reader queueing the same work twice, but it is a claim the dispatch
+        // has still to make good on. If the queue refuses the job the route
+        // would otherwise be left saying "queued" for ever with nothing
+        // enqueued, so the claim is withdrawn and the route goes back to
+        // being one that queues itself the next time its page is opened.
+        try {
+            ProfileRouteTraffic::dispatch($route);
+        } catch (Throwable $e) {
+            $route->update([
+                'traffic_status' => Route::TRAFFIC_UNPROFILED,
+                'traffic_queued_at' => null,
+            ]);
+
+            report($e);
+        }
 
         return $route;
     }

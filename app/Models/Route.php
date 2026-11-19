@@ -36,6 +36,7 @@ use Illuminate\Support\Str;
  * @property int $point_count
  * @property string|null $original_gpx_path
  * @property string $traffic_status
+ * @property Carbon|null $traffic_queued_at
  * @property Carbon|null $traffic_profiled_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -54,6 +55,7 @@ use Illuminate\Support\Str;
     'point_count',
     'original_gpx_path',
     'traffic_status',
+    'traffic_queued_at',
     'traffic_profiled_at',
 ])]
 class Route extends Model
@@ -87,6 +89,23 @@ class Route extends Model
     public const TRAFFIC_COMPLETED = 'completed';
 
     public const TRAFFIC_FAILED = 'failed';
+
+    /**
+     * How long a queued traffic profile is given before it is written off.
+     *
+     * Matching a route takes a second or two, so a quarter of an hour is not
+     * a slow job: it is a job that is not running. Something has to put a
+     * limit on the wait, because the two states that keep the page saying
+     * "working" are both states a dropped job sits in for ever. The job
+     * records its own failure when it fails, but nothing records a job that
+     * never reached a worker at all — a queue with no worker on it, or a
+     * worker that was killed mid-run and took the attempt with it.
+     *
+     * Writing it off is not giving up on it: the status is untouched, so a
+     * profile that lands later than this still shows up. All that expires is
+     * the page's willingness to keep asking.
+     */
+    public const TRAFFIC_STALL_AFTER_MINUTES = 15;
 
     /**
      * How long an upload nobody has claimed lives, in days.
@@ -143,6 +162,7 @@ class Route extends Model
             'distance_m' => 'integer',
             'elevation_gain_m' => 'integer',
             'point_count' => 'integer',
+            'traffic_queued_at' => 'datetime',
             'traffic_profiled_at' => 'datetime',
             'shared_at' => 'datetime',
             'expires_at' => 'datetime',
@@ -209,10 +229,56 @@ class Route extends Model
 
     /**
      * Whether the traffic profile is still being worked out.
+     *
+     * The wait is given a deadline, because the status alone cannot tell a
+     * job that is running from one that was never picked up: both sit on
+     * queued. Past the deadline the page stops asking and says so, rather
+     * than polling for the lifetime of the tab.
      */
     public function isProfilingTraffic(): bool
     {
+        return $this->isAwaitingTraffic() && ! $this->hasStalledTraffic();
+    }
+
+    /**
+     * Whether the traffic profile was asked for and has not arrived.
+     *
+     * Both states a route waits in: never asked about, and asked about but
+     * not answered. The clock below is what separates the two above.
+     */
+    public function isAwaitingTraffic(): bool
+    {
         return in_array($this->traffic_status, [self::TRAFFIC_UNPROFILED, self::TRAFFIC_QUEUED], true);
+    }
+
+    /**
+     * Whether the wait has gone on long enough to call it off.
+     *
+     * Measured from when the job was queued, falling back to when the row
+     * was last written for the routes that predate that column.
+     */
+    public function hasStalledTraffic(): bool
+    {
+        if (! $this->isAwaitingTraffic()) {
+            return false;
+        }
+
+        $since = $this->traffic_queued_at ?? $this->updated_at;
+
+        return $since === null
+            || $since->addMinutes(self::TRAFFIC_STALL_AFTER_MINUTES)->isPast();
+    }
+
+    /**
+     * Whether the page has nothing more to wait for and no traffic to show.
+     *
+     * The failure the job recorded and the failure nobody recorded read the
+     * same way to a rider: the answer is not coming.
+     */
+    public function hasUnresolvedTraffic(): bool
+    {
+        return $this->traffic_status === self::TRAFFIC_FAILED
+            || $this->hasStalledTraffic();
     }
 
     /**

@@ -948,3 +948,135 @@ it('leaves the breakdown off a route whose traffic is not worked out', function 
         ->assertOk()
         ->assertDontSee('What this ride is made of');
 });
+
+/**
+ * The page polls every two seconds while it believes work is in hand, and
+ * `queued` is the state a job that never reached a worker is left in. Without
+ * a deadline on the wait those two facts together mean a dropped job is
+ * indistinguishable from a running one and the page polls for the lifetime of
+ * the tab.
+ */
+it('keeps polling while a queued profile is still within its deadline', function () {
+    $this->route->update([
+        'traffic_status' => Route::TRAFFIC_QUEUED,
+        'traffic_queued_at' => now()->subMinutes(Route::TRAFFIC_STALL_AFTER_MINUTES - 1),
+    ]);
+
+    $this->get(route('routes.show', $this->route))
+        ->assertOk()
+        ->assertSee('Working out the traffic on this route')
+        ->assertSee('wire:poll', escape: false);
+});
+
+/**
+ * Within a single sitting the deadline is what stops the asking. The poll
+ * re-renders the page without running mount again, so nothing re-queues
+ * underneath the rider: the page simply stops asking and says so.
+ */
+it('stops polling once the deadline passes while the page is open', function () {
+    $this->route->update([
+        'traffic_status' => Route::TRAFFIC_QUEUED,
+        'traffic_queued_at' => now(),
+    ]);
+
+    $page = Livewire::test('pages::routes.show', ['route' => $this->route])
+        ->assertSee('Working out the traffic on this route');
+
+    $this->travel(Route::TRAFFIC_STALL_AFTER_MINUTES + 1)->minutes();
+
+    $page->call('$refresh')
+        ->assertSee('The traffic on this route could not be worked out.')
+        ->assertDontSee('Working out the traffic on this route');
+});
+
+/**
+ * Opening the page again is the owner asking again, so a route whose job was
+ * dropped rather than failed picks itself back up without anyone running a
+ * command against the database.
+ */
+it('queues a fresh profile for a route whose job went past the deadline', function () {
+    Queue::fake();
+
+    $this->route->update([
+        'traffic_status' => Route::TRAFFIC_QUEUED,
+        'traffic_queued_at' => now()->subMinutes(Route::TRAFFIC_STALL_AFTER_MINUTES + 1),
+    ]);
+
+    $this->get(route('routes.show', $this->route))
+        ->assertOk()
+        ->assertSee('Working out the traffic on this route');
+
+    Queue::assertPushed(ProfileRouteTraffic::class);
+
+    expect($this->route->refresh()->traffic_queued_at->diffInMinutes(now(), absolute: true))
+        ->toBeLessThan(1);
+});
+
+/**
+ * Asking again is bounded by the deadline rather than by the reload, so a
+ * rider refreshing a waiting page cannot pile up jobs for the same route.
+ */
+it('does not queue again for a route still within its deadline', function () {
+    Queue::fake();
+
+    $this->route->update([
+        'traffic_status' => Route::TRAFFIC_QUEUED,
+        'traffic_queued_at' => now()->subMinutes(Route::TRAFFIC_STALL_AFTER_MINUTES - 1),
+    ]);
+
+    $this->get(route('routes.show', $this->route))->assertOk();
+    $this->get(route('routes.show', $this->route))->assertOk();
+
+    Queue::assertNotPushed(ProfileRouteTraffic::class);
+});
+
+/**
+ * Work on a route belongs to whoever uploaded it. Someone reading a link they
+ * were sent cannot start it, so for them a stalled route is simply one with
+ * no traffic to show — and they must not be left polling for it either.
+ */
+it('tells a reader sent the link that a stalled profile is not coming', function () {
+    Queue::fake();
+
+    $route = Route::factory()->for(User::factory())->shared()->create([
+        'traffic_status' => Route::TRAFFIC_QUEUED,
+        'traffic_queued_at' => now()->subMinutes(Route::TRAFFIC_STALL_AFTER_MINUTES + 1),
+    ]);
+
+    $this->get(route('routes.show', $route))
+        ->assertOk()
+        ->assertSee('The traffic on this route could not be worked out.')
+        ->assertDontSee('wire:poll', escape: false);
+
+    Queue::assertNotPushed(ProfileRouteTraffic::class);
+});
+
+it('records when the traffic profile was queued', function () {
+    Queue::fake();
+
+    expect($this->route->traffic_queued_at)->toBeNull();
+
+    $this->get(route('routes.show', $this->route))->assertOk();
+
+    expect($this->route->refresh()->traffic_queued_at)->not->toBeNull();
+});
+
+/**
+ * A profile that lands late is still a profile. Calling the wait off is the
+ * page giving up on asking, not the route being written off, so a job that
+ * finishes after the deadline shows its traffic as normal.
+ */
+it('still shows traffic that arrives after the deadline has passed', function () {
+    TrafficSection::factory()->for($this->route)->create();
+
+    $this->route->update([
+        'traffic_status' => Route::TRAFFIC_COMPLETED,
+        'traffic_queued_at' => now()->subDay(),
+        'traffic_profiled_at' => now(),
+    ]);
+
+    $this->get(route('routes.show', $this->route))
+        ->assertOk()
+        ->assertDontSee('could not be worked out')
+        ->assertDontSee('wire:poll', escape: false);
+});

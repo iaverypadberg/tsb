@@ -160,3 +160,26 @@ it('rejects files with a disallowed extension', function () {
 
     expect(Route::count())->toBe(0);
 });
+
+/**
+ * A route is marked queued before the job is handed over, so that a second
+ * reader does not queue the same work twice. If the handover then fails the
+ * route must not keep that claim: it was the combination of an unenqueueable
+ * job and a route left saying "queued" that stranded uploads on a spinner,
+ * because the page only ever re-queues a route still marked unprofiled.
+ *
+ * Standing in for the real failure, which was a `cloud` connection resolving
+ * to the sqs driver without the AWS SDK installed to build its client.
+ */
+it('does not leave a route claiming to be queued when the queue refuses the job', function () {
+    config(['queue.default' => 'a-connection-that-does-not-exist']);
+
+    Livewire::test('pages::routes.upload')
+        ->set('gpx', gpxUpload(sampleGpx()))
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect(Route::sole())
+        ->traffic_status->toBe(Route::TRAFFIC_UNPROFILED)
+        ->traffic_queued_at->toBeNull();
+});
