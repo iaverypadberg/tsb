@@ -40,11 +40,14 @@ test('the landing page draws a roadmap step for each entry', function () {
     expect(substr_count($response->getContent(), 'data-test="roadmap-step"'))->toBe(5);
 });
 
-test('the landing page gives an address to write to', function () {
+test('the landing page gives a copyable address to write to', function () {
     $this->actingAs(User::factory()->create());
 
     $this->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Get in touch')
-        ->assertSee('mailto:iaverypadberg@gmail.com', escape: false);
+        ->assertSee('iaverypadberg@gmail.com')
+        ->assertSee('data-test="copy-email"', escape: false)
+        ->assertSee('data-test="copy-email-address"', escape: false)
+        ->assertDontSee('mailto:', escape: false);
 });

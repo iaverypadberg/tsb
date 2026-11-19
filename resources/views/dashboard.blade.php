@@ -16,6 +16,11 @@
     ];
 
     /**
+     * The address the "Get in touch" section offers for feedback.
+     */
+    $contactEmail = 'iaverypadberg@gmail.com';
+
+    /**
      * The roadmap, earliest at the top.
      *
      * This list is the whole timeline: add, reorder or reword an entry and the
@@ -89,7 +94,7 @@
 
             <flux:text class="max-w-2xl">
                 <strong class="font-semibold">{{ __('Riding somewhere new?') }}</strong>
-                {{ __('Upload the route and Traffic Screening for Bikes(TSB) shows you which of its roads carry heavy traffic before you are out there in survival mode. With an account locals can flag roads riders should be wary of.') }}
+                {{ __('Upload the route and SteerClear shows you which of its roads carry heavy traffic before you are out there in survival mode. With an account locals can flag roads riders should be wary of.') }}
             </flux:text>
 
             <div class="flex flex-wrap gap-3">
@@ -192,14 +197,47 @@
                 </flux:text>
             </div>
 
-            <flux:button
-                href="mailto:iaverypadberg@gmail.com"
-                variant="ghost"
-                icon="envelope"
-                class="self-start"
+            {{-- The address is copyable rather than a mailto: link, so clicking it
+                 never hands the visitor off to a webmail compose window. Both the
+                 address and the icon beside it run the same copy. --}}
+            <div
+                class="flex items-center gap-1.5 self-start"
+                x-data="{
+                    copy() {
+                        navigator.clipboard.writeText(@js($contactEmail));
+
+                        $dispatch('toast-show', {
+                            duration: 3000,
+                            slots: { text: @js(__('Email address copied.')) },
+                            dataset: { variant: 'success' },
+                        });
+                    },
+                }"
             >
-                iaverypadberg@gmail.com
-            </flux:button>
+                <flux:icon.envelope variant="micro" class="text-zinc-400 dark:text-zinc-500" />
+
+                <button
+                    type="button"
+                    x-on:click="copy()"
+                    class="cursor-pointer text-sm font-black text-zinc-500 hover:text-zinc-800 dark:text-zinc-300 dark:hover:text-white"
+                    data-test="copy-email-address"
+                >
+                    {{ $contactEmail }}
+                </button>
+
+                <flux:button
+                    variant="ghost"
+                    size="xs"
+                    icon="clipboard"
+                    icon:variant="micro"
+                    square
+                    inset="top bottom"
+                    :tooltip="__('Copy email address')"
+                    :aria-label="__('Copy email address')"
+                    data-test="copy-email"
+                    x-on:click="copy()"
+                />
+            </div>
         </section>
     </div>
 </x-layouts::app>
