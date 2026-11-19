@@ -167,10 +167,32 @@ jobs:
           fi
 
           composer global require laravel/cloud-cli --no-interaction --no-progress
-          "$(composer global config bin-dir --absolute --quiet)/cloud" command:run \
+          cloud="$(composer global config bin-dir --absolute --quiet)/cloud"
+
+          "${cloud}" command:run \
             "${CLOUD_ENVIRONMENT}" \
             --cmd="php artisan roads:rebuild --release=${TAG}${extras}" \
             -n
+
+          # `command:run` reports the delivery of the command, which can
+          # succeed while the command it delivered exits non-zero. Ask the
+          # environment what it actually holds rather than trusting that.
+          echo 'Verifying the environment was populated'
+
+          counts="$("${cloud}" tinker "${CLOUD_ENVIRONMENT}" --timeout=120 -n \
+            --code='echo DB::table("osm_highways")->count().":".DB::table("road_segments")->count();')"
+
+          echo "${counts}"
+
+          staged="$(printf '%s' "${counts}" | grep -oE '[0-9]+:[0-9]+' | tail -n 1 | cut -d: -f1)"
+          segments="$(printf '%s' "${counts}" | grep -oE '[0-9]+:[0-9]+' | tail -n 1 | cut -d: -f2)"
+
+          if [ -z "${segments}" ] || [ "${segments}" -eq 0 ] || [ "${staged}" -eq 0 ]; then
+            echo "::error::The rebuild left the environment empty (staged=${staged:-?}, segments=${segments:-?}). The artifact was published, so re-run the rebuild once the cause is fixed."
+            exit 1
+          fi
+
+          echo "${staged} staged ways, ${segments} road segments."
 
       - name: Summarise
         if: always()

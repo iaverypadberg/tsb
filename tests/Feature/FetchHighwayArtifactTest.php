@@ -35,13 +35,13 @@ it('downloads the newest release carrying the artifact tag prefix', function () 
             githubRelease('osm-2026-11-18', assetId: 42),
             githubRelease('osm-2026-10-02', assetId: 41),
         ]),
-        'api.github.com/repos/example/roads/releases/assets/42' => Http::response('artifact-bytes'),
+        'api.github.com/repos/example/roads/releases/assets/42' => Http::response(gzencode('artifact-bytes')),
     ]);
 
     $fetched = app(FetchHighwayArtifact::class)->handle();
 
     expect($fetched['tag'])->toBe('osm-2026-11-18')
-        ->and(file_get_contents($fetched['path']))->toBe('artifact-bytes');
+        ->and(gzdecode((string) file_get_contents($fetched['path'])))->toBe('artifact-bytes');
 });
 
 it('downloads the release named instead of the newest', function () {
@@ -49,13 +49,13 @@ it('downloads the release named instead of the newest', function () {
         'api.github.com/repos/example/roads/releases/tags/osm-2026-10-02' => Http::response(
             githubRelease('osm-2026-10-02', assetId: 41),
         ),
-        'api.github.com/repos/example/roads/releases/assets/41' => Http::response('older-bytes'),
+        'api.github.com/repos/example/roads/releases/assets/41' => Http::response(gzencode('older-bytes')),
     ]);
 
     $fetched = app(FetchHighwayArtifact::class)->handle('osm-2026-10-02');
 
     expect($fetched['tag'])->toBe('osm-2026-10-02')
-        ->and(file_get_contents($fetched['path']))->toBe('older-bytes');
+        ->and(gzdecode((string) file_get_contents($fetched['path'])))->toBe('older-bytes');
 });
 
 it('fails when no release carries the artifact prefix', function () {
@@ -99,11 +99,46 @@ it('fails before calling GitHub when no token is configured', function () {
 it('sends the token and a user agent GitHub will accept', function () {
     Http::fake([
         'api.github.com/repos/example/roads/releases?*' => Http::response([githubRelease('osm-2026-11-18', assetId: 42)]),
-        'api.github.com/repos/example/roads/releases/assets/42' => Http::response('artifact-bytes'),
+        'api.github.com/repos/example/roads/releases/assets/42' => Http::response(gzencode('artifact-bytes')),
     ]);
 
     app(FetchHighwayArtifact::class)->handle();
 
     Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer test-token')
         && $request->hasHeader('User-Agent', 'bad-roads-osm-artifact'));
+});
+
+it('asks for the asset itself rather than its metadata', function () {
+    Http::fake([
+        'api.github.com/repos/example/roads/releases?*' => Http::response([githubRelease('osm-2026-11-18', assetId: 42)]),
+        'api.github.com/repos/example/roads/releases/assets/42' => Http::response(gzencode('artifact-bytes')),
+    ]);
+
+    app(FetchHighwayArtifact::class)->handle();
+
+    // A single Accept of octet-stream, not a list also carrying the JSON
+    // media type: GitHub honours the JSON one and answers the asset request
+    // with the asset's metadata instead of the asset.
+    Http::assertSent(function ($request) {
+        if (! str_contains($request->url(), '/releases/assets/42')) {
+            return false;
+        }
+
+        return $request->header('Accept') === ['application/octet-stream'];
+    });
+});
+
+it('fails clearly when GitHub answers the asset request with metadata', function () {
+    Http::fake([
+        'api.github.com/repos/example/roads/releases?*' => Http::response([githubRelease('osm-2026-11-18', assetId: 42)]),
+        // What the asset endpoint returns when it is not asked for octet-stream.
+        'api.github.com/repos/example/roads/releases/assets/42' => Http::response([
+            'id' => 42,
+            'name' => 'osm_highways.ndjson.gz',
+            'content_type' => 'application/gzip',
+        ]),
+    ]);
+
+    expect(fn () => app(FetchHighwayArtifact::class)->handle())
+        ->toThrow(RuntimeException::class, 'are not a gzip file');
 });

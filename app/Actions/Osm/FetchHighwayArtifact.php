@@ -63,6 +63,7 @@ class FetchHighwayArtifact
 
         // Releases come back newest first, so the first match is the one.
         $releases = $this->request()
+            ->accept('application/vnd.github+json')
             ->get($this->repositoryUrl().'/releases', ['per_page' => 100])
             ->throw()
             ->json();
@@ -84,7 +85,9 @@ class FetchHighwayArtifact
      */
     private function taggedRelease(string $tag): array
     {
-        $response = $this->request()->get($this->repositoryUrl()."/releases/tags/{$tag}");
+        $response = $this->request()
+            ->accept('application/vnd.github+json')
+            ->get($this->repositoryUrl()."/releases/tags/{$tag}");
 
         if ($response->status() === 404) {
             throw new RuntimeException("No release tagged [{$tag}] in ".config('osm.artifact.repository').'.');
@@ -128,6 +131,37 @@ class FetchHighwayArtifact
 
             throw new RuntimeException("Downloading the artifact failed with status {$response->status()}.");
         }
+
+        $this->assertGzip($destination);
+    }
+
+    /**
+     * The asset endpoint answers with the asset's metadata as JSON unless it
+     * is asked for octet-stream, and that JSON would otherwise be reported
+     * much later as an artifact with an unreadable header. Checking the gzip
+     * magic number here names the real problem instead.
+     */
+    private function assertGzip(string $destination): void
+    {
+        $handle = fopen($destination, 'rb');
+        $magic = $handle === false ? '' : (string) fread($handle, 2);
+
+        if ($handle !== false) {
+            fclose($handle);
+        }
+
+        if ($magic === "\x1f\x8b") {
+            return;
+        }
+
+        $size = (int) filesize($destination);
+
+        File::delete($destination);
+
+        throw new RuntimeException(
+            "GitHub returned {$size} bytes that are not a gzip file. The asset request was "
+            .'answered with something other than the asset itself.',
+        );
     }
 
     private function request(): PendingRequest
@@ -140,9 +174,13 @@ class FetchHighwayArtifact
             );
         }
 
+        // Accept is deliberately left out here and set per call. Laravel
+        // merges headers recursively, so an Accept set on this base request
+        // would combine with the download's rather than be replaced by it,
+        // and GitHub would answer the asset request with its metadata JSON
+        // instead of the file.
         return Http::withToken($token)
             ->withHeaders([
-                'Accept' => 'application/vnd.github+json',
                 'X-GitHub-Api-Version' => '2022-11-28',
                 // GitHub requires a User-Agent and rejects requests without one.
                 'User-Agent' => 'bad-roads-osm-artifact',
